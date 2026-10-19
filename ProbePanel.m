@@ -107,11 +107,20 @@ static void SXRecord(NSString *event, NSDictionary *fields) {
 // Temporary opt-in diagnostic entry point for validating the panel on X 12.35.
 // No X-private menu classes are modified. Actual side-menu integration follows
 // after native menu classes have been observed on the installed app.
+static NSArray<UIWindow *> *SXProbeWindows(void) {
+    NSMutableArray<UIWindow *> *windows = [NSMutableArray array];
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        if (scene.activationState != UISceneActivationStateForegroundActive) continue;
+        [windows addObjectsFromArray:((UIWindowScene *)scene).windows];
+    }
+    return windows;
+}
 static void SXOpenPanel(void) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ SXOpenPanel(); }); return; }
     if (![[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.atebits.Tweetie2"]) return;
     UIWindow *window = nil;
-    for (UIWindow *w in UIApplication.sharedApplication.windows) {
+    for (UIWindow *w in SXProbeWindows()) {
         if (w.isKeyWindow) { window = w; break; }
     }
     UIViewController *current = window.rootViewController;
@@ -133,7 +142,7 @@ static char SXInstalledGestureKey;
 static void SXInstallTemporaryEntry(void) {
     if (![[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.atebits.Tweetie2"]) return;
     if (!SXGestureTarget) SXGestureTarget = [SXProbeGestureTarget new];
-    for (UIWindow *w in UIApplication.sharedApplication.windows) {
+    for (UIWindow *w in SXProbeWindows()) {
         if (!w.isKeyWindow) continue;
         if (objc_getAssociatedObject(w, &SXInstalledGestureKey)) continue;
         // Finger-count is deliberately two to avoid ordinary X gestures.
