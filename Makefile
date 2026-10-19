@@ -6,8 +6,8 @@ INSTALL_TARGET_PROCESSES =
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = ScarletXProbe
-ScarletXProbe_FILES = Tweak.xm
-ScarletXProbe_FRAMEWORKS = Foundation
+ScarletXProbe_FILES = Tweak.xm ProbePanel.m
+ScarletXProbe_FRAMEWORKS = Foundation UIKit
 ScarletXProbe_CFLAGS = -fobjc-arc
 ScarletXProbe_INSTALL_PATH = /Library/MobileSubstrate/DynamicLibraries
 
