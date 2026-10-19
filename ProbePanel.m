@@ -129,22 +129,20 @@ static void SXOpenPanel(void) {
 }
 @end
 static SXProbeGestureTarget *SXGestureTarget;
+static char SXInstalledGestureKey;
 static void SXInstallTemporaryEntry(void) {
     if (![[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.atebits.Tweetie2"]) return;
     if (!SXGestureTarget) SXGestureTarget = [SXProbeGestureTarget new];
     for (UIWindow *w in UIApplication.sharedApplication.windows) {
         if (!w.isKeyWindow) continue;
-        BOOL installed = NO;
-        for (UIGestureRecognizer *gesture in w.gestureRecognizers)
-            if ([gesture isKindOfClass:UILongPressGestureRecognizer.class] && gesture.view.tag == 0x53585052) installed = YES;
-        if (installed) continue;
+        if (objc_getAssociatedObject(w, &SXInstalledGestureKey)) continue;
         // Finger-count is deliberately two to avoid ordinary X gestures.
         UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:SXGestureTarget action:@selector(trigger:)];
         gesture.numberOfTouchesRequired = 2;
         gesture.minimumPressDuration = 1.2;
         gesture.cancelsTouchesInView = NO;
         [w addGestureRecognizer:gesture];
-        w.tag = 0x53585052;
+        objc_setAssociatedObject(w, &SXInstalledGestureKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
 __attribute__((constructor))
