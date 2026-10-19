@@ -30,11 +30,11 @@ jobs:
 
       - name: Install RootHide Theos
         if: steps.theos-cache.outputs.cache-hit != 'true'
-        env:
-          THEOS: ${{ github.workspace }}/unused
         run: |
-          unset THEOS
           bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
+
+      - name: Configure Theos path
+        run: echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
 
       - name: Validate toolchain
         run: |
@@ -45,7 +45,6 @@ jobs:
 
       - name: Build RootHide package
         env:
-          THEOS: ${{ github.runner.os == 'macOS' && format('{0}/theos', runner.home) || '' }}
           THEOS_PACKAGE_SCHEME: roothide
         run: |
           make clean
