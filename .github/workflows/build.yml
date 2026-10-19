@@ -26,30 +26,33 @@ jobs:
         id: theos-cache
         uses: actions/cache@v4
         with:
-          path: ~/theos
-          key: roothide-theos-macos15-v1
+          path: theos
+          key: roothide-theos-ios16.5-v2
 
-      - name: Install RootHide Theos
-        if: steps.theos-cache.outputs.cache-hit != 'true'
+      - name: Setup lightweight RootHide Theos
+        shell: bash
         run: |
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
-
-      - name: Configure Theos path
-        run: echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
-
-      - name: Validate toolchain
-        run: |
-          test -f "$HOME/theos/makefiles/common.mk"
-          ls -la "$HOME/theos/sdks"
-          command -v make
-          command -v dpkg-deb || true
-
+          set -euo pipefail
+          export THEOS="$GITHUB_WORKSPACE/theos"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+          if [ "${{ steps.theos-cache.outputs.cache-hit }}" != "true" ]; then
+            git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/roothide/theos.git "$THEOS"
+            mkdir -p "$THEOS/sdks"
+            git clone --depth=1 --filter=blob:none --sparse https://github.com/theos/sdks.git "$RUNNER_TEMP/theos-sdks"
+            git -C "$RUNNER_TEMP/theos-sdks" sparse-checkout set iPhoneOS16.5.sdk
+            cp -R "$RUNNER_TEMP/theos-sdks/iPhoneOS16.5.sdk" "$THEOS/sdks/"
+          fi
+          test -f "$THEOS/makefiles/common.mk"
+          test -d "$THEOS/sdks/iPhoneOS16.5.sdk"
+          if ! brew list make >/dev/null 2>&1; then brew install make; fi
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+          if ! command -v ldid >/dev/null 2>&1; then brew install ldid; fi
+          du -sh "$THEOS"
       - name: Build RootHide package
         env:
           THEOS_PACKAGE_SCHEME: roothide
         run: |
-          make clean
-          make -j2 package FINALPACKAGE=1
+          make -j"$(sysctl -n hw.logicalcpu)" package FINALPACKAGE=1
           find packages -type f -name '*.deb' -print
 
       - name: Upload .deb artifact
