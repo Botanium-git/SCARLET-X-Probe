@@ -1,4 +1,5 @@
-name: Build RootHide Probe
+name: ScarletX Probe
+run-name: ScarletX Probe Build
 
 on:
   push:
