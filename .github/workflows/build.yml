@@ -1,0 +1,61 @@
+name: Build RootHide Probe
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: probe-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache RootHide Theos and SDK
+        id: theos-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/theos
+          key: roothide-theos-macos15-v1
+
+      - name: Install RootHide Theos
+        if: steps.theos-cache.outputs.cache-hit != 'true'
+        env:
+          THEOS: ${{ github.workspace }}/unused
+        run: |
+          unset THEOS
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
+
+      - name: Validate toolchain
+        run: |
+          test -f "$HOME/theos/makefiles/common.mk"
+          ls -la "$HOME/theos/sdks"
+          command -v make
+          command -v dpkg-deb || true
+
+      - name: Build RootHide package
+        env:
+          THEOS: ${{ github.runner.os == 'macOS' && format('{0}/theos', runner.home) || '' }}
+          THEOS_PACKAGE_SCHEME: roothide
+        run: |
+          make clean
+          make -j2 package FINALPACKAGE=1
+          find packages -type f -name '*.deb' -print
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SCARLET-X-Probe-roothide
+          path: packages/*.deb
+          if-no-files-found: error
+          retention-days: 14
