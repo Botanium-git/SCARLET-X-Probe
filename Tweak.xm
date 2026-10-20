@@ -1,7 +1,6 @@
-// SCARLET-X-Probe 0.1.0
-// Deliberately no method hooks, data capture, network access or persistence.
-// The constructor only reports app version and presence of known Objective-C
-// classes to the device's unified logging system when loaded into official X.
+// SCARLET-X-Probe 0.1.2
+// No method hooks, user-content capture, or network access.
+// A minimal launch marker distinguishes dylib injection from UI-entry failure.
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
@@ -13,6 +12,13 @@ static void ScarletXProbeStart(void) {
         if (![bundleID isEqualToString:@"com.atebits.Tweetie2"]) {
             return;
         }
+
+        // Written before querying classes or touching UIKit; never includes account data.
+        NSString *markerPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"SCARLET-X-Probe-loaded.txt"];
+        NSString *marker = [NSString stringWithFormat:@"SCARLET-X-Probe 0.1.2 loaded\\nprocess=%@\\n", bundleID];
+        NSError *markerError = nil;
+        BOOL markerWritten = [marker writeToFile:markerPath atomically:YES encoding:NSUTF8StringEncoding error:&markerError];
+        NSLog(@"[SCARLET-X-Probe] v0.1.2 load marker %@ at %@ (%@)", markerWritten ? @"written" : @"failed", markerPath, markerError.localizedDescription ?: @"ok");
 
         NSString *version = [bundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"unknown";
         NSString *build = [bundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"unknown";
