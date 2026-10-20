@@ -55,6 +55,29 @@ jobs:
           make -j"$(sysctl -n hw.logicalcpu)" package FINALPACKAGE=1
           find packages -type f -name '*.deb' -print
 
+      - name: Inspect packaged tweak and Mach-O
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$(find packages -maxdepth 1 -type f -name '*.deb' | head -n 1)"
+          test -n "$deb"
+          echo "=== package metadata ==="
+          dpkg-deb -f "$deb" Package Version Architecture Depends
+          echo "=== package file inventory ==="
+          dpkg-deb -c "$deb" | tee "$RUNNER_TEMP/probe-package-files.txt"
+          grep -q '/Library/MobileSubstrate/DynamicLibraries/ScarletXProbe.dylib' "$RUNNER_TEMP/probe-package-files.txt"
+          grep -q '/Library/MobileSubstrate/DynamicLibraries/ScarletXProbe.plist' "$RUNNER_TEMP/probe-package-files.txt"
+          echo "=== staged dylib architecture and linked libraries ==="
+          dylib="$(find .theos/_/Library/MobileSubstrate/DynamicLibraries -name 'ScarletXProbe.dylib' -print -quit)"
+          test -f "$dylib"
+          file "$dylib"
+          xcrun lipo -info "$dylib"
+          xcrun otool -L "$dylib"
+          echo "=== native load commands ==="
+          xcrun otool -l "$dylib" | grep -E 'LC_(LOAD_DYLIB|ID_DYLIB|RPATH|BUILD_VERSION)|path |name ' || true
+          echo "=== local signature (if inspectable) ==="
+          codesign -dv "$dylib" 2>&1 || true
+
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
