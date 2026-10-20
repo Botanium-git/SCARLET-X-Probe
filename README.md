@@ -45,3 +45,22 @@ Source:
 - https://github.com/roothide/Bootstrap-basebin/blob/main/bootstrap/bootstrap.c
 
 No app binary, package version, main branch or device data modifications in this investigation.
+
+
+## PatchLoader 0.0.8 versus TweakLoader — source verified (2026-10-21)
+
+Official sources:
+- `roothide/PatchLoader` `PatchLoader.c`, `control`, `Makefile`
+  https://github.com/roothide/PatchLoader/blob/main/PatchLoader.c
+- `roothide/Bootstrap-basebin` `bootstrap/bootstrap.c`
+  https://github.com/roothide/Bootstrap-basebin/blob/main/bootstrap/bootstrap.c
+
+The device-reported `com.roothide.patchloader 0.0.8` can now be mapped to an **exact upstream package manifest** (`control` says version `0.0.8`, description "RootHide Dynamic Patches Loader"). Its `Makefile` compiles library `roothidepatch` into `/usr/lib`, i.e. `roothidepatch.dylib`, not `TweakLoader.dylib`.
+
+Its `image_load_handler` constructs the filename `<loaded Mach-O path>.roothidepatch`, verifies it exists with `lstat`, then calls `dlopen(patcher, RTLD_NOW)` and resolves `InitPatches`. Its constructor walks loaded Mach-O images outside dyld shared cache and registers callback for newly loaded images. This mechanism loads **per-image RootHide patch companions**, not the ordinary `/Library/MobileSubstrate/DynamicLibraries/ScarletXProbe.dylib` with the `ScarletXProbe.plist` filter.
+
+The `bootstrap.c` call `dlopen(jbroot("/usr/lib/roothidepatch.dylib"), RTLD_NOW)` is **separate** from the later **TweakLoader** conditional path `if (access(jbroot("/var/mobile/.tweakenabled"), F_OK)==0) { if (access(jbroot("/usr/lib/TweakLoader.dylib"), F_OK)==0) dlopen(tweakloader, RTLD_NOW); }`, subject to earlier guards. The fact that PatchLoader 0.0.8 is installed and the application launches is **not evidence** that a generic tweak loader exists, executes, discovers the Probe plist, or loads Probe.
+
+Confirmed by upstream source and device-reported package version. Still unconfirmed on device: `TweakLoader.dylib` presence, `.tweakenabled` presence, actual X launch-time loader path, and Probe dylib in dyld image list. User is away from SE: **no device actions requested**. Do not install ElleKit, toggle Bootstrap settings, or bump Probe version on this finding alone.
+
+Next static study: identify the separate upstream TweakLoader/ElleKit injection package responsible for reading MobileSubstrate filters in RootHide Bootstrap; map exact package names and loader dependency, without assuming a current device state.
