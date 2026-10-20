@@ -1,4 +1,4 @@
-// SCARLET-X-Probe 0.1.2
+// SCARLET-X-Probe 0.1.3
 // No method hooks, user-content capture, or network access.
 // A minimal launch marker distinguishes dylib injection from UI-entry failure.
 #import <Foundation/Foundation.h>
@@ -13,12 +13,18 @@ static void ScarletXProbeStart(void) {
             return;
         }
 
-        // Written before querying classes or touching UIKit; never includes account data.
-        NSString *markerPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"SCARLET-X-Probe-loaded.txt"];
-        NSString *marker = [NSString stringWithFormat:@"SCARLET-X-Probe 0.1.2 loaded\\nprocess=%@\\n", bundleID];
+        // Persistent per-app marker; no account, session, or tweet contents.
+        // Filza > Apps > X > Documents can check this even after app exit.
+        NSURL *documents = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory
+                                                                   inDomains:NSUserDomainMask] firstObject];
+        NSURL *markerURL = [documents URLByAppendingPathComponent:@"SCARLET-X-Probe-loaded.txt"];
+        NSString *marker = [NSString stringWithFormat:@"SCARLET-X-Probe 0.1.3 loaded\\nbundle=%@\\n", bundleID];
         NSError *markerError = nil;
-        BOOL markerWritten = [marker writeToFile:markerPath atomically:YES encoding:NSUTF8StringEncoding error:&markerError];
-        NSLog(@"[SCARLET-X-Probe] v0.1.2 load marker %@ at %@ (%@)", markerWritten ? @"written" : @"failed", markerPath, markerError.localizedDescription ?: @"ok");
+        BOOL markerWritten = (markerURL && [marker writeToURL:markerURL atomically:YES
+                                                encoding:NSUTF8StringEncoding error:&markerError]);
+        NSLog(@"[SCARLET-X-Probe] v0.1.3 persistent marker %@ at %@ (%@)",
+              markerWritten ? @"written" : @"failed", markerURL.path ?: @"no Documents",
+              markerError.localizedDescription ?: @"ok");
 
         NSString *version = [bundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"unknown";
         NSString *build = [bundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"unknown";
