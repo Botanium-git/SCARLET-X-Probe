@@ -20,3 +20,8 @@ After the user explicitly enables X injection and installs a verified RootHide p
 ## v0.1.2 injection diagnostic
 
 The Tweak.xm constructor, independent of the temporary UIKit button, writes a short `SCARLET-X-Probe-loaded.txt` marker to X's `NSTemporaryDirectory()` and emits a matching `NSLog` message when loaded into `com.atebits.Tweetie2`. The marker records only Probe version and bundle ID, no account or timeline data. This file resides in X's sandbox and might require sandbox-aware file access or device logs to inspect; **absence of a visible SX Probe button alone does not reveal whether the marker exists**. Do not reset or reinstall official X to obtain it.
+
+
+## v0.1.3 persistent injection marker check
+
+After installing v0.1.3 and relaunching X, open **Filza → Apps → X (Twitter) → Documents**, and check for `SCARLET-X-Probe-loaded.txt` (not `tmp`). Its presence and the `0.1.3` version inside positively establish execution of the tweak constructor. Absence is inconclusive (the dylib may not have loaded, its guard may have returned, or the file write may have failed); it is **not proof of injection failure**. No credentials or post content are written. Do not delete or reinstall official X to inspect it.
