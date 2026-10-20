@@ -15,3 +15,8 @@ See `docs/SAFETY.md` for operating constraints.
 ## Experimental panel entry
 
 After the user explicitly enables X injection and installs a verified RootHide package, tap the temporary **SX Probe** button at the upper-left of the X window to open the diagnostic panel. It can record only version and class-presence metadata, export it to a local JSON share sheet, and clear it. No Drive authentication, layout hooks or actual side-menu modification are present yet. Do not infer actual runtime stability from a successful build.
+
+
+## v0.1.2 injection diagnostic
+
+The Tweak.xm constructor, independent of the temporary UIKit button, writes a short `SCARLET-X-Probe-loaded.txt` marker to X's `NSTemporaryDirectory()` and emits a matching `NSLog` message when loaded into `com.atebits.Tweetie2`. The marker records only Probe version and bundle ID, no account or timeline data. This file resides in X's sandbox and might require sandbox-aware file access or device logs to inspect; **absence of a visible SX Probe button alone does not reveal whether the marker exists**. Do not reset or reinstall official X to obtain it.
