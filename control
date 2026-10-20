@@ -1,6 +1,6 @@
 Package: com.botanium.scarletxprobe
 Name: SCARLET-X Probe
-Version: 0.1.0
+Version: 0.1.1
 Architecture: iphoneos-arm64e
 Description: Read-only X runtime metadata probe; no method hooks in initial build.
 Maintainer: Botanium
