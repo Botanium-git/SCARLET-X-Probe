@@ -136,22 +136,28 @@ static void SXOpenPanel(void) {
 - (void)trigger:(UILongPressGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateBegan) SXOpenPanel();
 }
+- (void)openFromButton:(__unused UIButton *)sender { SXOpenPanel(); }
 @end
 static SXProbeGestureTarget *SXGestureTarget;
-static char SXInstalledGestureKey;
+static char SXInstalledEntryKey;
 static void SXInstallTemporaryEntry(void) {
     if (![[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.atebits.Tweetie2"]) return;
     if (!SXGestureTarget) SXGestureTarget = [SXProbeGestureTarget new];
     for (UIWindow *w in SXProbeWindows()) {
-        if (!w.isKeyWindow) continue;
-        if (objc_getAssociatedObject(w, &SXInstalledGestureKey)) continue;
-        // Finger-count is deliberately two to avoid ordinary X gestures.
-        UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:SXGestureTarget action:@selector(trigger:)];
-        gesture.numberOfTouchesRequired = 2;
-        gesture.minimumPressDuration = 1.2;
-        gesture.cancelsTouchesInView = NO;
-        [w addGestureRecognizer:gesture];
-        objc_setAssociatedObject(w, &SXInstalledGestureKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (!w.isKeyWindow || !w.rootViewController) continue;
+        if (objc_getAssociatedObject(w, &SXInstalledEntryKey)) continue;
+        // Visible temporary entry proves that the dylib loaded into official X.
+        UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+        button.frame = CGRectMake(12, 110, 92, 32);
+        button.autoresizingMask = UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleBottomMargin;
+        [button setTitle:@"SX Probe" forState:UIControlStateNormal];
+        button.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+        button.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.90];
+        [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+        button.layer.cornerRadius = 8;
+        [button addTarget:SXGestureTarget action:@selector(openFromButton:) forControlEvents:UIControlEventTouchUpInside];
+        [w addSubview:button];
+        objc_setAssociatedObject(w, &SXInstalledEntryKey, button, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
 __attribute__((constructor))
@@ -166,5 +172,8 @@ static void SXProbeInit(void) {
             }];
             SXInstallTemporaryEntry();
         });
+            [[NSNotificationCenter defaultCenter] addObserverForName:UIWindowDidBecomeKeyNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+                SXInstallTemporaryEntry();
+            }];
     }
 }
