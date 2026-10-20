@@ -25,3 +25,23 @@ The Tweak.xm constructor, independent of the temporary UIKit button, writes a sh
 ## v0.1.3 persistent injection marker check
 
 After installing v0.1.3 and relaunching X, open **Filza → Apps → X (Twitter) → Documents**, and check for `SCARLET-X-Probe-loaded.txt` (not `tmp`). Its presence and the `0.1.3` version inside positively establish execution of the tweak constructor. Absence is inconclusive (the dylib may not have loaded, its guard may have returned, or the file write may have failed); it is **not proof of injection failure**. No credentials or post content are written. Do not delete or reinstall official X to inspect it.
+
+
+## RootHide injection-chain investigation (2026-10-21)
+
+Evidence: public RootHide source `roothide/Bootstrap` `Bootstrap/AppEnabler.m` and submodule `roothide/Bootstrap-basebin` `bootstrap/bootstrap.c`, checked against the existing Probe 0.1.3 package inventory and Mach-O CI logs (successful run 39457815941).
+
+- `enableForApp` for an ordinary installed app creates a `.jbroot` symlink in the application bundle and refreshes registration with `uicache`; the enabled switch is **not** proof that a custom tweak was loaded.
+- The public `bootstrap.c` uses several conditional guards (launch-job parent, coalition/process eligibility, process-specific exclusions, and `DISABLE_TWEAKS`, `_SafeMode`, `_MSSafeMode`).
+- The relevant **TweakLoader invocation** is guarded by existence of `jbroot("/var/mobile/.tweakenabled")`, then `jbroot("/usr/lib/TweakLoader.dylib")`; only then does it call `dlopen(tweakloader, RTLD_NOW)`. This is a confirmed **source-level** pathway and does not prove the user's installed Bootstrap 2.2.1 binary has identical code.
+- The earlier `dpkg -l` search for `ellekit|substrate|libhooker|roothide` and `/var/jb/usr/lib` substring scans cannot establish TweakLoader presence/absence. `com.roothide.patchloader` is not by itself evidence that the particular Probe library loaded.
+- The CI run confirmed `ScarletXProbe.dylib` and `ScarletXProbe.plist` in `Library/MobileSubstrate/DynamicLibraries`, ARM64 native dylib and RootHide-style install-name. These are build/package findings only.
+- Device reports: installed Probe 0.1.3, X enabled, X launches, no visible button, no `Documents/SCARLET-X-Probe-loaded.txt`. This does **not** yet distinguish an absent/failed TweakLoader, filter skip, constructor guard, or marker write failure.
+
+**Next device check, read-only, without further toggling, reinstalling or respringing:** use NewTerm `ls -l /var/jb/usr/lib/TweakLoader.dylib` and `ls -la /var/jb/var/mobile/.tweakenabled`, separately; inspect exact errors. RootHide's jbroot location/symlinks may differ, so a negative result is not definitive without confirming current root mappings. Do not install ElleKit based on its name alone.
+
+Source:
+- https://github.com/roothide/Bootstrap/blob/main/Bootstrap/AppEnabler.m
+- https://github.com/roothide/Bootstrap-basebin/blob/main/bootstrap/bootstrap.c
+
+No app binary, package version, main branch or device data modifications in this investigation.
