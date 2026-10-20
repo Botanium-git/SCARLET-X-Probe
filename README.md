@@ -64,3 +64,12 @@ The `bootstrap.c` call `dlopen(jbroot("/usr/lib/roothidepatch.dylib"), RTLD_NOW)
 Confirmed by upstream source and device-reported package version. Still unconfirmed on device: `TweakLoader.dylib` presence, `.tweakenabled` presence, actual X launch-time loader path, and Probe dylib in dyld image list. User is away from SE: **no device actions requested**. Do not install ElleKit, toggle Bootstrap settings, or bump Probe version on this finding alone.
 
 Next static study: identify the separate upstream TweakLoader/ElleKit injection package responsible for reading MobileSubstrate filters in RootHide Bootstrap; map exact package names and loader dependency, without assuming a current device state.
+
+
+## Follow-up: how a TweakLoader path can be supplied (2026-10-21)
+
+External implementation reference: `tealbathingsuit/ellekit` `Makefile` (https://github.com/tealbathingsuit/ellekit/blob/main/Makefile) installs a link `/usr/lib/TweakLoader.dylib` → `/usr/lib/ellekit/libinjector.dylib`; it also creates a MobileSubstrate DynamicLibraries ↔ TweakInject link in its packaging. This is **one documented ElleKit packaging implementation**, **not verification of the specific RootHide build or of what is present on the user's SE**. The previously reported `dpkg -l | grep -Ei 'ellekit|substitute|substrate|libhooker|roothide'` yielded no ElleKit package. It remains possible for a different package to supply TweakLoader, and naming / repository compatibility must be checked before recommending installation.
+
+Source-backed chain now: Bootstrap app enablement → AppEnabler adds `.jbroot` → `bootstrap.dylib` guarded access to `.tweakenabled` and `TweakLoader.dylib` → a loader implementation (not yet inspected in the deployed build) would decide whether to load the Probe .plist/.dylib. Separately, `roothidepatch.dylib` from PatchLoader 0.0.8 handles `*.roothidepatch` sidecars, not normal tweak filters. Thus a **missing TweakLoader implementation is a specific hypothesis worth testing later**, not a diagnosed fact.
+
+No changes to Probe code, package version, or user device. Avoid suggesting arbitrary ElleKit installation until exact installed path / compatible RootHide package is known.
