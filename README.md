@@ -14,4 +14,4 @@ See `docs/SAFETY.md` for operating constraints.
 
 ## Experimental panel entry
 
-After the user explicitly enables X injection and installs a verified RootHide package, hold **two fingers** on the X window for about **1.2 seconds** to open the temporary SX Probe panel. It can record only version and class-presence metadata, export it to a local JSON share sheet, and clear it. No Drive authentication, layout hooks or actual side-menu modification are present yet. Do not infer actual runtime stability from a successful build.
+After the user explicitly enables X injection and installs a verified RootHide package, tap the temporary **SX Probe** button at the upper-left of the X window to open the diagnostic panel. It can record only version and class-presence metadata, export it to a local JSON share sheet, and clear it. No Drive authentication, layout hooks or actual side-menu modification are present yet. Do not infer actual runtime stability from a successful build.
