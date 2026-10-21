@@ -1,4 +1,4 @@
-// SCARLET-X-Probe 0.1.9
+// SCARLET-X-Probe 0.1.10
 // No method hooks or user-content capture; Drive networking is explicitly user-triggered.
 // A minimal launch marker distinguishes dylib injection from UI-entry failure.
 #import <Foundation/Foundation.h>
@@ -18,11 +18,11 @@ static void ScarletXProbeStart(void) {
         NSURL *documents = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory
                                                                    inDomains:NSUserDomainMask] firstObject];
         NSURL *markerURL = [documents URLByAppendingPathComponent:@"SCARLET-X-Probe-loaded.txt"];
-        NSString *marker = [NSString stringWithFormat:@"SCARLET-X-Probe 0.1.9 loaded\\nbundle=%@\\n", bundleID];
+        NSString *marker = [NSString stringWithFormat:@"SCARLET-X-Probe 0.1.10 loaded\\nbundle=%@\\n", bundleID];
         NSError *markerError = nil;
         BOOL markerWritten = (markerURL && [marker writeToURL:markerURL atomically:YES
                                                 encoding:NSUTF8StringEncoding error:&markerError]);
-        NSLog(@"[SCARLET-X-Probe] v0.1.9 persistent marker %@ at %@ (%@)",
+        NSLog(@"[SCARLET-X-Probe] v0.1.10 persistent marker %@ at %@ (%@)",
               markerWritten ? @"written" : @"failed", markerURL.path ?: @"no Documents",
               markerError.localizedDescription ?: @"ok");
 
