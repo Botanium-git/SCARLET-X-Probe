@@ -45,16 +45,18 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
 - (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
 - (void)driveUpdated:(NSNotification *)note { [self.tableView reloadData]; }
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 10; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 3; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 3; }
+- (NSInteger)rowForPath:(NSIndexPath *)path { return path.section * 3 + path.row; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
     NSBundle *bundle = [NSBundle mainBundle];
-    if (path.row <= 2) {
-        if (path.row == 0) {
+    NSInteger row = [self rowForPath:path];
+    if (row <= 2) {
+        if (row == 0) {
             cell.textLabel.text = @"X バージョン";
             cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ (%@)", [bundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?", [bundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"?"];
-        } else if (path.row == 1) {
+        } else if (row == 1) {
             cell.textLabel.text = @"クラス存在チェック";
             NSUInteger count = 0;
             const char *targets[] = {"TTAStatusBodyTextView", "T1StatusCell", "T1StandardStatusView", "T1StatusTableRowAdapter"};
@@ -67,26 +69,23 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
             [toggle addTarget:self action:@selector(toggleRecording:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = toggle;
         }
-    } else if (path.row == 3) {
+    } else if (row == 3) {
         cell.textLabel.text=SXDriveIsConnected()?@"接続を解除":@"Googleアカウントで接続";
         cell.detailTextLabel.text=SXDriveIsConnected()?@"接続済み":@"未接続";
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if (path.row == 4) {
+    } else if (row == 4) {
         cell.textLabel.text=@"診断JSONをDriveへ送信";
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if (path.row == 5) {
-        cell.textLabel.text=@"Google Drive接続を解除";
-        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if (path.row == 6) {
+    } else if (row == 5) {
         cell.textLabel.text=@"現在の状態";
         cell.detailTextLabel.text=SXDriveCurrentStatus();
-    } else if (path.row == 7) {
+    } else if (row == 6) {
         cell.textLabel.text=@"診断JSONを共有";
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if (path.row == 8) {
+    } else if (row == 7) {
         cell.textLabel.text=@"診断ログを消去";
         cell.textLabel.textColor=UIColor.systemRedColor;
-    } else if (path.row == 9) {
+    } else if (row == 8) {
         cell.textLabel.text=@"クラスメソッド情報を記録";
         cell.detailTextLabel.text=@"読み取り専用";
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
@@ -105,10 +104,11 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
     [tableView deselectRowAtIndexPath:path animated:YES];
-    if(path.row>=3 && path.row<=5) SXDriveHandleRow(path.row-3,self);
-    if(path.row==7) [self exportJSON];
-    if(path.row==8){dispatch_sync(SXQueue, ^{[SXEntries removeAllObjects];});[self.tableView reloadData];}
-    if(path.row==9) [self recordMethodMetadata];
+    NSInteger row = [self rowForPath:path];
+    if (row == 3 || row == 4) SXDriveHandleRow(row - 3,self);
+    if (row == 6) [self exportJSON];
+    if (row == 7) { dispatch_sync(SXQueue, ^{ [SXEntries removeAllObjects]; }); [self.tableView reloadData]; }
+    if (row == 8) [self recordMethodMetadata];
 }
 - (void)recordMethodMetadata {
  if(!SXEnabled) {
@@ -202,7 +202,7 @@ static void SXInstallTemporaryEntry(void) {
         if (objc_getAssociatedObject(w, &SXInstalledEntryKey)) continue;
         // Visible temporary entry proves that the dylib loaded into official X.
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-        button.frame = CGRectMake(12, 110, 42, 32);
+        button.frame = CGRectMake(104, 70, 42, 32);
         button.autoresizingMask = UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleBottomMargin;
         [button setTitle:@"SX" forState:UIControlStateNormal];
         button.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
