@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+extern UIViewController *SXCreateProbeOAuthTestController(void);
 
 static NSMutableArray<NSDictionary *> *SXEntries;
 static dispatch_queue_t SXQueue;
@@ -29,7 +30,7 @@ static void SXRecord(NSString *event, NSDictionary *fields) {
 }
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 2; }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section == 0 ? 3 : 2; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section == 0 ? 3 : 3; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
     NSBundle *bundle = [NSBundle mainBundle];
@@ -54,6 +55,9 @@ static void SXRecord(NSString *event, NSDictionary *fields) {
         if (path.row == 0) {
             cell.textLabel.text = @"診断JSONを共有";
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        } else if (path.row == 1) {
+            cell.textLabel.text = @"Google Drive認証テスト";
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         } else {
             cell.textLabel.text = @"診断ログを消去";
             cell.textLabel.textColor = UIColor.systemRedColor;
@@ -76,6 +80,9 @@ static void SXRecord(NSString *event, NSDictionary *fields) {
     if (path.section != 1) return;
     if (path.row == 0) [self exportJSON];
     if (path.row == 1) {
+        [self.navigationController pushViewController:SXCreateProbeOAuthTestController() animated:YES];
+    }
+    if (path.row == 2) {
         dispatch_sync(SXQueue, ^{ [SXEntries removeAllObjects]; });
         [self.tableView reloadData];
     }
