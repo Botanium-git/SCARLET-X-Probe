@@ -17,6 +17,17 @@ static void SXRecord(NSString *event, NSDictionary *fields) {
     });
 }
 
+NSDictionary *SXProbeDiagnosticPayload(void) {
+    __block NSArray *entries=nil;
+    if(SXQueue) dispatch_sync(SXQueue, ^{ entries=[SXEntries copy]; });
+    NSBundle *b=NSBundle.mainBundle;
+    return @{@"format":@"ScarletXProbe",@"schemaVersion":@1,
+             @"generatedAt":@(NSDate.date.timeIntervalSince1970),
+             @"xVersion":[b objectForInfoDictionaryKey:@"CFBundleShortVersionString"]?:@"",
+             @"xBuild":[b objectForInfoDictionaryKey:@"CFBundleVersion"]?:@"",
+             @"entries":entries?:@[]};
+}
+
 @interface SXProbePanel : UITableViewController
 @end
 
@@ -56,7 +67,7 @@ static void SXRecord(NSString *event, NSDictionary *fields) {
             cell.textLabel.text = @"診断JSONを共有";
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         } else if (path.row == 1) {
-            cell.textLabel.text = @"Google Drive認証テスト";
+            cell.textLabel.text = @"Google Drive連携";
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         } else {
             cell.textLabel.text = @"診断ログを消去";
