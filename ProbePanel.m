@@ -9,16 +9,47 @@ static dispatch_queue_t SXQueue;
 static BOOL SXEnabled = NO;
 static BOOL SXRecordingRestored = NO;
 static NSString * const SXRecordingKey = @"com.botanium.sxprobe.metadata.enabled";
-
+static NSString *SXLogPath(void) {
+    NSURL *dir = [[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask] firstObject];
+    dir = [dir URLByAppendingPathComponent:@"ScarletXProbe" isDirectory:YES];
+    [[NSFileManager defaultManager] createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    return [[dir URLByAppendingPathComponent:@"diagnostics.json"] path];
+}
+static void SXInitializeLog(void) {
+    SXQueue = dispatch_queue_create("com.botanium.sxprobe.entries", DISPATCH_QUEUE_SERIAL);
+    NSData *data = [NSData dataWithContentsOfFile:SXLogPath()];
+    id decoded = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    SXEntries = [decoded isKindOfClass:NSArray.class] ? [decoded mutableCopy] : [NSMutableArray new];
+    if(SXEntries.count>300) [SXEntries removeObjectsInRange:NSMakeRange(0,SXEntries.count-300)];
+    SXEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:SXRecordingKey];
+}
+static void SXSaveEntries(void) {
+    NSData *data = [NSJSONSerialization dataWithJSONObject:SXEntries options:0 error:nil];
+    if(data) [data writeToFile:SXLogPath() atomically:YES];
+}
 static void SXRecord(NSString *event, NSDictionary *fields) {
-    if (!SXEnabled || !SXQueue) return;
+    if (!SXQueue) return;
     NSDictionary *item = @{@"event":event ?: @"unknown",
                            @"timestamp":@([[NSDate date] timeIntervalSince1970]),
                            @"fields":fields ?: @{}};
-    dispatch_async(SXQueue, ^{
+    dispatch_sync(SXQueue, ^{
         [SXEntries addObject:item];
-        if (SXEntries.count > 300) [SXEntries removeObjectsInRange:NSMakeRange(0, SXEntries.count - 300)];
+        if(SXEntries.count>300) [SXEntries removeObjectsInRange:NSMakeRange(0,SXEntries.count-300)];
+        SXSaveEntries();
     });
+}
+static void SXClearEntries(void) {
+    if (!SXQueue) return;
+    dispatch_sync(SXQueue, ^{ [SXEntries removeAllObjects]; SXSaveEntries(); });
+}
+static NSDictionary *SXLogSummary(void) {
+    __block NSDictionary *result=@{@"count":@0,@"last":@"なし"};
+    if(SXQueue) dispatch_sync(SXQueue, ^{
+        NSDictionary *last = SXEntries.lastObject;
+        NSString *name = [last[@"event"] isKindOfClass:NSString.class] ? last[@"event"] : @"なし";
+        result=@{@"count":@(SXEntries.count),@"last":name};
+    });
+    return result;
 }
 
 NSDictionary *SXProbeDiagnosticPayload(void) {
@@ -40,7 +71,6 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"SX Probe";
-    SXEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:SXRecordingKey];
     if (SXEnabled && !SXRecordingRestored) {
         SXRecordingRestored = YES;
         SXRecord(@"recording-restored",@{@"enabled":@YES});
@@ -53,7 +83,7 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
 - (void)driveUpdated:(NSNotification *)note { [self.tableView reloadData]; }
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 3; }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 3; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section == 2 ? 5 : 3; }
 - (NSInteger)rowForPath:(NSIndexPath *)path { return path.section * 3 + path.row; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
@@ -96,6 +126,12 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
     } else if (row == 8) {
         cell.textLabel.text=@"診断ログを消去";
         cell.textLabel.textColor=UIColor.systemRedColor;
+    } else if (row == 9) {
+        cell.textLabel.text=@"記録イベント数";
+        cell.detailTextLabel.text=[SXLogSummary()[@"count"] description];
+    } else if (row == 10) {
+        cell.textLabel.text=@"最新イベント";
+        cell.detailTextLabel.text=SXLogSummary()[@"last"];
     }
     return cell;
 }
@@ -117,7 +153,7 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
     if (row == 3 || row == 4) SXDriveHandleRow(row - 3,self);
     if (row == 6) [self recordMethodMetadata];
     if (row == 7) [self exportJSON];
-    if (row == 8) { dispatch_sync(SXQueue, ^{ [SXEntries removeAllObjects]; }); [self.tableView reloadData]; }
+    if (row == 8) { SXClearEntries(); [self.tableView reloadData]; }
 }
 - (void)recordMethodMetadata {
  // Explicit, read-only user action must produce a result even when recording is off.
@@ -140,6 +176,7 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
  }
  SXRecord(@"method-probe-completed",@{@"classesChecked":@4});
  SXEnabled=previous;
+ [self.tableView reloadData];
  UIAlertController *a=[UIAlertController alertControllerWithTitle:@"記録完了" message:@"4クラスの関連メソッド名を記録したわ。Driveへ送信してね。" preferredStyle:UIAlertControllerStyleAlert];
  [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
  [self presentViewController:a animated:YES completion:nil];
@@ -228,8 +265,9 @@ __attribute__((constructor))
 static void SXProbeInit(void) {
     @autoreleasepool {
         if (![[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.atebits.Tweetie2"]) return;
-        SXQueue = dispatch_queue_create("com.botanium.sxprobe.entries", DISPATCH_QUEUE_SERIAL);
-        SXEntries = [NSMutableArray new];
+        SXInitializeLog();
+        if(SXEnabled) SXRecord(@"recording-restored",@{@"enabled":@YES});
+        SXRecordingRestored=SXEnabled;
         dispatch_async(dispatch_get_main_queue(), ^{
             [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
                 SXInstallTemporaryEntry();
