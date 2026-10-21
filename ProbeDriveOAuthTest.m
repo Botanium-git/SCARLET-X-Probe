@@ -5,6 +5,7 @@
 
 // v0.1.5: explicit user-triggered Google Drive upload of Probe metadata only.
 // No X content, cookies, authorization headers or browsing data are collected.
+static __weak UIViewController *SXDriveHost;
 static NSString * const SXClientID = @"336218902468-g2t9ha7h9jhfckilh1l8k2k1gl64sltr.apps.googleusercontent.com";
 static NSString * const SXKeychainService=@"com.botanium.scarletxprobe.google-drive";
 static NSString * const SXKeychainAccount=@"drive.file";
@@ -81,7 +82,7 @@ static NSURLRequest *SXDriveRequest(NSString *url,NSString *method,NSString *tok
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title=@"Google Drive連携";
-    self.statusText=SXReadToken()?@"接続済み（送信未検証）":@"未接続";
+    self.statusText=SXReadToken()?@"接続済み":@"未接続";
 }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 4; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)p {
@@ -94,7 +95,7 @@ static NSURLRequest *SXDriveRequest(NSString *url,NSString *method,NSString *tok
     return c;
 }
 - (ASPresentationAnchor)presentationAnchorForWebAuthenticationSession:(ASWebAuthenticationSession *)session {
-    return self.view.window;
+    return SXDriveHost.view.window ?: self.view.window;
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)p {
     [tableView deselectRowAtIndexPath:p animated:YES];
@@ -121,6 +122,7 @@ static NSURLRequest *SXDriveRequest(NSString *url,NSString *method,NSString *tok
     self.expectedState=state;self.verifier=verifier;
     self.statusText=@"認証画面を起動中…";
     [self.tableView reloadData];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SXDriveStateChanged" object:nil];
     __weak typeof(self) weakSelf=self;
     self.auth=[[ASWebAuthenticationSession alloc] initWithURL:url.URL callbackURLScheme:SXCallbackScheme completionHandler:^(NSURL *callback,NSError *error){
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -154,6 +156,7 @@ static NSURLRequest *SXDriveRequest(NSString *url,NSString *method,NSString *tok
 
 - (void)status:(NSString *)message {
  self.statusText=message;[self.tableView reloadData];
+ [[NSNotificationCenter defaultCenter] postNotificationName:@"SXDriveStateChanged" object:nil];
 }
 - (void)tokenRequest:(NSDictionary *)fields finish:(SXDone)finish {
  NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://oauth2.googleapis.com/token"]];
@@ -245,7 +248,27 @@ static NSURLRequest *SXDriveRequest(NSString *url,NSString *method,NSString *tok
   OSStatus rc=SecItemDelete((__bridge CFDictionaryRef)SXKeyQuery());
   [self status:(rc==errSecSuccess||rc==errSecItemNotFound)?@"未接続":@"認証情報の削除に失敗"];
  }]];
- [self presentViewController:a animated:YES completion:nil];
+ [(SXDriveHost ?: self) presentViewController:a animated:YES completion:nil];
 }
 @end
 UIViewController *SXCreateProbeOAuthTestController(void) { return [SXProbeOAuthTest new]; }
+
+static SXProbeOAuthTest *SXDriveController(void) {
+ static SXProbeOAuthTest *controller=nil;
+ static dispatch_once_t once;
+ dispatch_once(&once, ^{ controller=[SXProbeOAuthTest new]; });
+ return controller;
+}
+BOOL SXDriveIsConnected(void) { return [SXReadToken()[@"refresh"] length]>0; }
+NSString *SXDriveCurrentStatus(void) { return SXDriveController().statusText?:@"未接続"; }
+void SXDriveHandleRow(NSInteger row,UIViewController *host) {
+ SXDriveHost=host;
+ SXProbeOAuthTest *controller=SXDriveController();
+ [controller loadViewIfNeeded];
+ if(controller.busy||controller.auth)return;
+ if(row==0) {
+  if(SXDriveIsConnected()) [controller confirmDisconnect];
+  else [controller tableView:controller.tableView didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+ } else if(row==1) [controller uploadProbe];
+ else if(row==2) [controller confirmDisconnect];
+}
