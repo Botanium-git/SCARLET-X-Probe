@@ -7,6 +7,7 @@ extern void SXDriveHandleRow(NSInteger row, UIViewController *host);
 static NSMutableArray<NSDictionary *> *SXEntries;
 static dispatch_queue_t SXQueue;
 static BOOL SXEnabled = NO;
+static BOOL SXRecordingRestored = NO;
 static NSString * const SXRecordingKey = @"com.botanium.sxprobe.metadata.enabled";
 
 static void SXRecord(NSString *event, NSDictionary *fields) {
@@ -40,6 +41,10 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
     [super viewDidLoad];
     self.title = @"SX Probe";
     SXEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:SXRecordingKey];
+    if (SXEnabled && !SXRecordingRestored) {
+        SXRecordingRestored = YES;
+        SXRecord(@"recording-restored",@{@"enabled":@YES});
+    }
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(driveUpdated:) name:@"SXDriveStateChanged" object:nil];
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(closePanel)];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"共有" style:UIBarButtonItemStylePlain target:self action:@selector(exportJSON)];
@@ -98,6 +103,7 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
     SXEnabled = sender.isOn;
     [[NSUserDefaults standardUserDefaults] setBool:SXEnabled forKey:SXRecordingKey];
     if (SXEnabled) {
+        SXRecordingRestored = YES;
         NSBundle *b = NSBundle.mainBundle;
         SXRecord(@"probe-enabled", @{@"version":[b objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"unknown"});
         const char *names[] = {"TTAStatusBodyTextView", "T1StatusCell", "T1StandardStatusView", "T1StatusTableRowAdapter"};
@@ -114,11 +120,10 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
     if (row == 8) { dispatch_sync(SXQueue, ^{ [SXEntries removeAllObjects]; }); [self.tableView reloadData]; }
 }
 - (void)recordMethodMetadata {
- if(!SXEnabled) {
-  UIAlertController *a=[UIAlertController alertControllerWithTitle:@"メタデータ記録がオフ" message:@"先にメタデータ記録をオンにしてね。" preferredStyle:UIAlertControllerStyleAlert];
-  [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-  [self presentViewController:a animated:YES completion:nil];return;
- }
+ // Explicit, read-only user action must produce a result even when recording is off.
+ BOOL previous=SXEnabled;
+ SXEnabled=YES;
+ SXRecord(@"method-probe-invoked",@{@"recordingWasEnabled":@(previous)});
  const char *names[]={"TTAStatusBodyTextView","T1StatusCell","T1StandardStatusView","T1StatusTableRowAdapter"};
  NSArray *terms=@[@"height",@"size",@"layout",@"display",@"text",@"row",@"status",@"viewmodel",@"frame",@"font"];
  for(NSUInteger i=0;i<4;i++){
@@ -133,6 +138,8 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
   if(methods)free(methods);
   SXRecord(@"method-names",@{@"class":[NSString stringWithUTF8String:names[i]],@"instanceMethodCount":@(count),@"matchingSelectors":selected});
  }
+ SXRecord(@"method-probe-completed",@{@"classesChecked":@4});
+ SXEnabled=previous;
  UIAlertController *a=[UIAlertController alertControllerWithTitle:@"記録完了" message:@"4クラスの関連メソッド名を記録したわ。Driveへ送信してね。" preferredStyle:UIAlertControllerStyleAlert];
  [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
  [self presentViewController:a animated:YES completion:nil];
@@ -205,7 +212,7 @@ static void SXInstallTemporaryEntry(void) {
         if (objc_getAssociatedObject(w, &SXInstalledEntryKey)) continue;
         // Visible temporary entry proves that the dylib loaded into official X.
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-        button.frame = CGRectMake(104, 26, 42, 32);
+        button.frame = CGRectMake(54, 26, 42, 32);
         button.autoresizingMask = UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleBottomMargin;
         [button setTitle:@"SX" forState:UIControlStateNormal];
         button.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
