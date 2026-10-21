@@ -7,6 +7,7 @@ extern void SXDriveHandleRow(NSInteger row, UIViewController *host);
 static NSMutableArray<NSDictionary *> *SXEntries;
 static dispatch_queue_t SXQueue;
 static BOOL SXEnabled = NO;
+static NSString * const SXRecordingKey = @"com.botanium.sxprobe.metadata.enabled";
 
 static void SXRecord(NSString *event, NSDictionary *fields) {
     if (!SXEnabled || !SXQueue) return;
@@ -38,6 +39,7 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"SX Probe";
+    SXEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:SXRecordingKey];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(driveUpdated:) name:@"SXDriveStateChanged" object:nil];
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(closePanel)];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"共有" style:UIBarButtonItemStylePlain target:self action:@selector(exportJSON)];
@@ -80,20 +82,21 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
         cell.textLabel.text=@"現在の状態";
         cell.detailTextLabel.text=SXDriveCurrentStatus();
     } else if (row == 6) {
-        cell.textLabel.text=@"診断JSONを共有";
-        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if (row == 7) {
-        cell.textLabel.text=@"診断ログを消去";
-        cell.textLabel.textColor=UIColor.systemRedColor;
-    } else if (row == 8) {
         cell.textLabel.text=@"クラスメソッド情報を記録";
         cell.detailTextLabel.text=@"読み取り専用";
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
+    } else if (row == 7) {
+        cell.textLabel.text=@"診断JSONを共有";
+        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
+    } else if (row == 8) {
+        cell.textLabel.text=@"診断ログを消去";
+        cell.textLabel.textColor=UIColor.systemRedColor;
     }
     return cell;
 }
 - (void)toggleRecording:(UISwitch *)sender {
     SXEnabled = sender.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:SXEnabled forKey:SXRecordingKey];
     if (SXEnabled) {
         NSBundle *b = NSBundle.mainBundle;
         SXRecord(@"probe-enabled", @{@"version":[b objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"unknown"});
@@ -106,9 +109,9 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
     [tableView deselectRowAtIndexPath:path animated:YES];
     NSInteger row = [self rowForPath:path];
     if (row == 3 || row == 4) SXDriveHandleRow(row - 3,self);
-    if (row == 6) [self exportJSON];
-    if (row == 7) { dispatch_sync(SXQueue, ^{ [SXEntries removeAllObjects]; }); [self.tableView reloadData]; }
-    if (row == 8) [self recordMethodMetadata];
+    if (row == 6) [self recordMethodMetadata];
+    if (row == 7) [self exportJSON];
+    if (row == 8) { dispatch_sync(SXQueue, ^{ [SXEntries removeAllObjects]; }); [self.tableView reloadData]; }
 }
 - (void)recordMethodMetadata {
  if(!SXEnabled) {
@@ -202,7 +205,7 @@ static void SXInstallTemporaryEntry(void) {
         if (objc_getAssociatedObject(w, &SXInstalledEntryKey)) continue;
         // Visible temporary entry proves that the dylib loaded into official X.
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-        button.frame = CGRectMake(104, 70, 42, 32);
+        button.frame = CGRectMake(104, 26, 42, 32);
         button.autoresizingMask = UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleBottomMargin;
         [button setTitle:@"SX" forState:UIControlStateNormal];
         button.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
