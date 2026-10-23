@@ -187,10 +187,32 @@ def main():
             temp_output.write_bytes(deb)
             temp_output.chmod(0o600)
             os.replace(temp_output, output)
-            print("Validated download:", output)
+            print("✅ Validated download:", output)
             print("Installed:", installed or "none", "Available:", version)
-            print("Open this .deb with Filza/Sileo, confirm install, then fully relaunch X.")
-            print("A download is NOT proof of a successful install or runtime injection.")
+            # RootHide shell view is distinct from Filza's rootfs view.
+            # Only stage a copy after all package checks passed.
+            share = pathlib.Path("/rootfs/var/mobile/Media/Downloads")
+            if share.is_dir():
+                shared = share / output.name
+                with tempfile.NamedTemporaryFile(dir=share, prefix=".sxprobe-", suffix=".part", delete=False) as stage:
+                    stage_file = pathlib.Path(stage.name)
+                    try:
+                        stage.write(deb)
+                        stage.flush()
+                        os.fsync(stage.fileno())
+                    finally:
+                        pass
+                try:
+                    stage_file.chmod(0o600)
+                    os.replace(stage_file, shared)
+                    print("✅ Filza handoff ready:", shared)
+                finally:
+                    if stage_file.exists():
+                        stage_file.unlink()
+            else:
+                print("⚠️ Filza handoff directory unavailable; original deb retained.")
+            print("Open in Filza and confirm installation; Sileo tracks installed version.")
+            print("Download does not prove installation or runtime injection.")
     except (OSError, ValueError, RuntimeError, zipfile.BadZipFile, subprocess.CalledProcessError,
             urllib.error.URLError, KeyError) as exc:
         sys.exit("Update check failed; installed Probe unchanged: " + str(exc))
