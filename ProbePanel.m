@@ -63,6 +63,34 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
              @"entries":entries?:@[]};
 }
 
+// Read-only collection; one automatic sample per process when metadata recording is enabled.
+static BOOL SXAutomaticMethodSnapshotDone = NO;
+static void SXCollectMethodMetadata(BOOL automatic) {
+ if (!SXQueue) return;
+ SXRecord(@"method-probe-invoked",@{@"recordingWasEnabled":@(SXEnabled),@"automatic":@(automatic)});
+ const char *names[]={"TTAStatusBodyTextView","T1StatusCell","T1StandardStatusView","T1StatusTableRowAdapter"};
+ NSArray *terms=@[@"height",@"size",@"layout",@"display",@"text",@"row",@"status",@"viewmodel",@"frame",@"font"];
+ for(NSUInteger i=0;i<4;i++){
+  Class cls=objc_getClass(names[i]);if(!cls)continue;
+  unsigned int count=0;Method *methods=class_copyMethodList(cls,&count);
+  NSMutableArray *selected=[NSMutableArray array];
+  for(unsigned int j=0;j<count;j++){
+   const char *cname=sel_getName(method_getName(methods[j]));if(!cname)continue;
+   NSString *name=[NSString stringWithUTF8String:cname],*lower=name.lowercaseString;
+   for(NSString *term in terms){if([lower containsString:term]){if(selected.count<60)[selected addObject:name];break;}}
+  }
+  if(methods)free(methods);
+  SXRecord(@"method-names",@{@"class":[NSString stringWithUTF8String:names[i]],@"instanceMethodCount":@(count),@"matchingSelectors":selected});
+ }
+ SXRecord(@"method-probe-completed",@{@"classesChecked":@4,@"automatic":@(automatic)});
+
+}
+static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
+ if (!SXEnabled || SXAutomaticMethodSnapshotDone) return;
+ SXAutomaticMethodSnapshotDone = YES;
+ SXCollectMethodMetadata(YES);
+}
+
 @interface SXProbePanel : UITableViewController
 @end
 
@@ -142,6 +170,7 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
         SXRecordingRestored = YES;
         NSBundle *b = NSBundle.mainBundle;
         SXRecord(@"probe-enabled", @{@"version":[b objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"unknown"});
+        SXCollectAutomaticMethodMetadataIfEnabled();
         const char *names[] = {"TTAStatusBodyTextView", "T1StatusCell", "T1StandardStatusView", "T1StatusTableRowAdapter"};
         for (NSUInteger i = 0; i < 4; ++i)
             SXRecord(@"class-check", @{@"class":[NSString stringWithUTF8String:names[i]], @"present":@(objc_getClass(names[i]) != nil)});
@@ -156,26 +185,8 @@ NSDictionary *SXProbeDiagnosticPayload(void) {
     if (row == 8) { SXClearEntries(); [self.tableView reloadData]; }
 }
 - (void)recordMethodMetadata {
- // Explicit, read-only user action must produce a result even when recording is off.
- BOOL previous=SXEnabled;
- SXEnabled=YES;
- SXRecord(@"method-probe-invoked",@{@"recordingWasEnabled":@(previous)});
- const char *names[]={"TTAStatusBodyTextView","T1StatusCell","T1StandardStatusView","T1StatusTableRowAdapter"};
- NSArray *terms=@[@"height",@"size",@"layout",@"display",@"text",@"row",@"status",@"viewmodel",@"frame",@"font"];
- for(NSUInteger i=0;i<4;i++){
-  Class cls=objc_getClass(names[i]);if(!cls)continue;
-  unsigned int count=0;Method *methods=class_copyMethodList(cls,&count);
-  NSMutableArray *selected=[NSMutableArray array];
-  for(unsigned int j=0;j<count;j++){
-   const char *cname=sel_getName(method_getName(methods[j]));if(!cname)continue;
-   NSString *name=[NSString stringWithUTF8String:cname],*lower=name.lowercaseString;
-   for(NSString *term in terms){if([lower containsString:term]){if(selected.count<60)[selected addObject:name];break;}}
-  }
-  if(methods)free(methods);
-  SXRecord(@"method-names",@{@"class":[NSString stringWithUTF8String:names[i]],@"instanceMethodCount":@(count),@"matchingSelectors":selected});
- }
- SXRecord(@"method-probe-completed",@{@"classesChecked":@4});
- SXEnabled=previous;
+ // Manual capture remains available even when metadata recording is disabled.
+ SXCollectMethodMetadata(NO);
  [self.tableView reloadData];
  UIAlertController *a=[UIAlertController alertControllerWithTitle:@"記録完了" message:@"4クラスの関連メソッド名を記録したわ。Driveへ送信してね。" preferredStyle:UIAlertControllerStyleAlert];
  [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
@@ -273,6 +284,7 @@ static void SXProbeInit(void) {
                 SXInstallTemporaryEntry();
             }];
             SXInstallTemporaryEntry();
+            SXCollectAutomaticMethodMetadataIfEnabled();
         });
             [[NSNotificationCenter defaultCenter] addObserverForName:UIWindowDidBecomeKeyNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
                 SXInstallTemporaryEntry();
