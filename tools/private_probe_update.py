@@ -110,7 +110,7 @@ def metadata(deb_path):
     proc = subprocess.run(
         ["dpkg-deb", "-f", str(deb_path), "Package", "Version", "Architecture"],
         check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    fields = proc.stdout.splitlines()
+    fields = [line.split(": ", 1)[-1] for line in proc.stdout.splitlines()]
     if len(fields) != 3:
         raise ValueError("Could not read expected deb control fields")
     name, version, architecture = fields
