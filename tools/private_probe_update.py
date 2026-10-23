@@ -55,7 +55,7 @@ def request(url, token=None):
 
 
 def api_json(url, token):
-    with urllib.request.urlopen(request(url, token), timeout=25) as response:
+    with urllib.request.build_opener(NoRedirect()).open(request(url, token), timeout=25) as response:
         if response.geturl() != url:
             raise ValueError("Unexpected API redirect")
         data = response.read(2 * 1024 * 1024 + 1)
