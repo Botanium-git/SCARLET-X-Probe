@@ -68,9 +68,9 @@ static BOOL SXAutomaticMethodSnapshotDone = NO;
 static void SXCollectMethodMetadata(BOOL automatic) {
  if (!SXQueue) return;
  SXRecord(@"method-probe-invoked",@{@"recordingWasEnabled":@(SXEnabled),@"automatic":@(automatic)});
- const char *names[]={"TTAStatusBodyTextView","T1StatusCell","T1StandardStatusView","T1StatusTableRowAdapter"};
+ const char *names[]={"TTAStatusBodyTextView","T1StatusCell","T1StandardStatusView","T1StatusTableRowAdapter","T1UserView","T1UserViewLayoutParameters","T1UserViewLayoutState","T1ProfileUserInfoView","T1ProfileHeaderView","T1ProfileUserInfoViewController"};
  NSArray *terms=@[@"height",@"size",@"layout",@"display",@"text",@"row",@"status",@"viewmodel",@"frame",@"font"];
- for(NSUInteger i=0;i<4;i++){
+ for(NSUInteger i=0;i<sizeof(names)/sizeof(names[0]);i++){
   Class cls=objc_getClass(names[i]);if(!cls)continue;
   unsigned int count=0;Method *methods=class_copyMethodList(cls,&count);
   NSMutableArray *selected=[NSMutableArray array];
@@ -82,7 +82,7 @@ static void SXCollectMethodMetadata(BOOL automatic) {
   if(methods)free(methods);
   SXRecord(@"method-names",@{@"class":[NSString stringWithUTF8String:names[i]],@"instanceMethodCount":@(count),@"matchingSelectors":selected});
  }
- SXRecord(@"method-probe-completed",@{@"classesChecked":@4,@"automatic":@(automatic)});
+ SXRecord(@"method-probe-completed",@{@"classesChecked":@(sizeof(names)/sizeof(names[0])),@"automatic":@(automatic)});
 
 }
 static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
@@ -124,9 +124,9 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
         } else if (row == 1) {
             cell.textLabel.text = @"クラス存在チェック";
             NSUInteger count = 0;
-            const char *targets[] = {"TTAStatusBodyTextView", "T1StatusCell", "T1StandardStatusView", "T1StatusTableRowAdapter"};
-            for (NSUInteger i = 0; i < 4; i++) if (objc_getClass(targets[i])) count++;
-            cell.detailTextLabel.text = [NSString stringWithFormat:@"%lu / 4", (unsigned long)count];
+            const char *targets[] = {"TTAStatusBodyTextView", "T1StatusCell", "T1StandardStatusView", "T1StatusTableRowAdapter", "T1UserView", "T1UserViewLayoutParameters", "T1UserViewLayoutState", "T1ProfileUserInfoView", "T1ProfileHeaderView", "T1ProfileUserInfoViewController"};
+            for (NSUInteger i = 0; i < sizeof(targets)/sizeof(targets[0]); i++) if (objc_getClass(targets[i])) count++;
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%lu / %lu", (unsigned long)count, (unsigned long)(sizeof(targets)/sizeof(targets[0]))];
         } else {
             cell.textLabel.text = @"メタデータ記録";
             UISwitch *toggle = [UISwitch new];
@@ -171,8 +171,8 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
         NSBundle *b = NSBundle.mainBundle;
         SXRecord(@"probe-enabled", @{@"version":[b objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"unknown"});
         SXCollectAutomaticMethodMetadataIfEnabled();
-        const char *names[] = {"TTAStatusBodyTextView", "T1StatusCell", "T1StandardStatusView", "T1StatusTableRowAdapter"};
-        for (NSUInteger i = 0; i < 4; ++i)
+        const char *names[]={"TTAStatusBodyTextView","T1StatusCell","T1StandardStatusView","T1StatusTableRowAdapter","T1UserView","T1UserViewLayoutParameters","T1UserViewLayoutState","T1ProfileUserInfoView","T1ProfileHeaderView","T1ProfileUserInfoViewController"};
+        for (NSUInteger i = 0; i < sizeof(names)/sizeof(names[0]); ++i)
             SXRecord(@"class-check", @{@"class":[NSString stringWithUTF8String:names[i]], @"present":@(objc_getClass(names[i]) != nil)});
     }
 }
