@@ -31,3 +31,8 @@ Open the resulting package in Filza and hand off to Sileo for explicit installat
 - `tools/private_probe_update.py` created on develop in commit `e91f00001ccff6959d9be0901e3e0b4cda96d2ab`.
 - Credentialed redirect hardening in commit `ec28df51c546b0f51b2a02b75d9f16048c0150e5`.
 - Main branch and installed SE Probe unchanged.
+
+## 2026-10-24 update: automatic Filza handoff
+On successful new-version download, updater also copies the validated deb to `/rootfs/var/mobile/Media/Downloads` if present, prints `✅ Filza handoff ready`. This path was actually shown to be visible in Filza on the user's SE. **The changed script itself still needs on-device validation**. No automatic install, no Sileo launch.
+
+Home screen one-tap and persistent secure credential storage remain **not yet implemented**. For a secure automatic action, assess a dedicated Keychain-backed native helper and on-device execution mechanism rather than placing a GitHub PAT in a Shortcut, shell script, or URL. Avoid exposing SSH port to LAN; require localhost binding, key authentication and host key verification if SSH becomes relevant.
