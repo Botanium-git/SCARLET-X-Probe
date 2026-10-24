@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <dlfcn.h>
+#include <string.h>
 extern BOOL SXDriveIsConnected(void);
 extern NSString *SXDriveCurrentStatus(void);
 extern void SXDriveHandleRow(NSInteger row, UIViewController *host);
