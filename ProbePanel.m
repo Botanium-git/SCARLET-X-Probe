@@ -271,6 +271,45 @@ static void SXRecordProfileBioSetterABI(void) {
         @"textCaptured":@NO
     });
 }
+// Typed, metadata-only observer for X 12.35 profile bio setter.
+typedef void (*SXBioSetterIMP)(id,SEL,id,id,id,BOOL);
+static SXBioSetterIMP SXOriginalBioSetter=NULL;
+static BOOL SXBioSetterInstalled=NO;
+static NSUInteger SXBioSetterCalls=0;
+static void SXObservedBioSetter(id target,SEL selector,id label,id text,id entities,BOOL utf16) {
+    SXBioSetterCalls++;
+    if(SXEnabled && SXBioSetterCalls<=40) {
+        NSMutableDictionary *meta=[@{
+            @"callIndex":@(SXBioSetterCalls),
+            @"labelClass":label?NSStringFromClass([label class]):@"nil",
+            @"textClass":text?NSStringFromClass([text class]):@"nil",
+            @"entitiesClass":entities?NSStringFromClass([entities class]):@"nil",
+            @"utf16Entities":@(utf16),
+            @"textCaptured":@NO
+        } mutableCopy];
+        if([label isKindOfClass:UIView.class]) {
+            UIView *view=(UIView *)label;
+            meta[@"labelWidth"]=@(view.bounds.size.width);
+            meta[@"labelHeight"]=@(view.bounds.size.height);
+        }
+        SXRecord(@"profile-bio-setter-call",meta);
+    }
+    if(SXOriginalBioSetter)SXOriginalBioSetter(target,selector,label,text,entities,utf16);
+}
+static void SXInstallBioSetterObserver(void) {
+    if(SXBioSetterInstalled)return;
+    Class cls=objc_getClass("T1ProfileUserInfoView");
+    SEL sel=NSSelectorFromString(@"_t1_setBioLabel:withText:entities:isUTF16Entities:");
+    Method method=cls?class_getInstanceMethod(cls,sel):NULL;
+    const char *abi=method?method_getTypeEncoding(method):NULL;
+    if(!abi || strcmp(abi,"v44@0:8@16@24@32B40"))return;
+    IMP previous=method_getImplementation(method);
+    if(!previous)return;
+    SXOriginalBioSetter=(SXBioSetterIMP)previous;
+    class_replaceMethod(cls,sel,(IMP)SXObservedBioSetter,abi);
+    SXBioSetterInstalled=YES;
+    SXRecord(@"profile-bio-setter-observer-installed",@{@"abiVerified":@YES,@"textCaptured":@NO});
+}
 static void SXRecordFontDispatchStatus(void) {
     Class cls=objc_getClass("TFNAttributedTextView");
     SEL textSel=NSSelectorFromString(@"ocf_updateForText:activeRanges:font:color:activeRangesFont:textAlignment:lineBreakMode:");
@@ -539,6 +578,7 @@ static NSDictionary *SXBioSnapshot(void) {
     if(SXFontHooksInstalled)SXFlushFontCounters();
     SXRecordFontDispatchStatus();
     SXRecordProfileBioSetterABI();
+    SXRecord(@"profile-bio-setter-counters",@{@"installed":@(SXBioSetterInstalled),@"calls":@(SXBioSetterCalls),@"textCaptured":@NO});
     NSDictionary *snapshot=SXBioSnapshot();
     SXRecord(@"profile-bio-view-snapshot",snapshot);
     [self.tableView reloadData];
@@ -648,9 +688,11 @@ static void SXProbeInit(void) {
             [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
                 SXInstallTemporaryEntry();
                 SXInstallProfileFontObservers();
+                SXInstallBioSetterObserver();
             }];
             SXInstallTemporaryEntry();
             SXInstallProfileFontObservers();
+            SXInstallBioSetterObserver();
             SXCollectAutomaticMethodMetadataIfEnabled();
         });
             [[NSNotificationCenter defaultCenter] addObserverForName:UIWindowDidBecomeKeyNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
