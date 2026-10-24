@@ -105,7 +105,7 @@ void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
         NSString *result=@"確認できませんでした";
         dispatch_semaphore_t sem=dispatch_semaphore_create(0);
-        NSString *url=[NSString stringWithFormat:@"https://api.github.com/repos/%@/actions/workflows/build.yml/runs?branch=develop&event=push&status=success&per_page=20",SXUpdateRepo];
+        NSString *url=[NSString stringWithFormat:@"https://api.github.com/repos/%@/actions/workflows/build.yml/runs?branch=develop&event=push&per_page=20",SXUpdateRepo];
         NSMutableURLRequest *req=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:url]];
         req.timeoutInterval=25;
         [req setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
@@ -121,12 +121,18 @@ void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
             NSDictionary *best=nil;
             for(NSDictionary *run in json[@"workflow_runs"]) {
                 if(![run isKindOfClass:NSDictionary.class] || ![run[@"head_branch"] isEqual:@"develop"] ||
-                   ![run[@"event"] isEqual:@"push"] || ![run[@"status"] isEqual:@"completed"] ||
-                   ![run[@"conclusion"] isEqual:@"success"] || ![run[@"path"] hasSuffix:@"build.yml"])continue;
+                   ![run[@"event"] isEqual:@"push"] || ![run[@"path"] hasSuffix:@"build.yml"])continue;
                 if(!best || [run[@"id"] longLongValue]>[best[@"id"] longLongValue])best=run;
             }
+            NSString *state=[best[@"status"] isKindOfClass:NSString.class]?best[@"status"]:@"";
+            NSString *conclusion=[best[@"conclusion"] isKindOfClass:NSString.class]?best[@"conclusion"]:@"";
+            if([state isEqual:@"queued"] || [state isEqual:@"waiting"] || [state isEqual:@"pending"] ||
+               [state isEqual:@"requested"])result=@"ビルド待機中";
+            else if([state isEqual:@"in_progress"])result=@"ビルド中";
+            else if([state isEqual:@"completed"] && ![conclusion isEqual:@"success"])
+                result=[conclusion isEqual:@"failure"]?@"ビルド失敗":@"ビルド未成功";
             NSString *sha=[best[@"head_sha"] isKindOfClass:NSString.class]?best[@"head_sha"]:nil;
-            if(sha.length==40) {
+            if([state isEqual:@"completed"] && [conclusion isEqual:@"success"] && sha.length==40) {
                 NSString *endpoint=[NSString stringWithFormat:@"https://api.github.com/repos/%@/contents/control?ref=%@",SXUpdateRepo,sha];
                 NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:endpoint]];
                 r.timeoutInterval=25;
