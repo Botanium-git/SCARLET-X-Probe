@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <Security/Security.h>
+#import <zlib.h>
 
 // Stage 1: private GitHub credentials and read-only update discovery.
 // Deliberately does not download, extract, install or run privileged commands.
@@ -46,6 +47,53 @@ static BOOL SXUpdateDeleteToken(void) {
 }
 @end
 
+
+static uint16_t SXZip16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1]<<8)); }
+static uint32_t SXZip32(const uint8_t *p) { return (uint32_t)p[0] | ((uint32_t)p[1]<<8) | ((uint32_t)p[2]<<16) | ((uint32_t)p[3]<<24); }
+// ZIP must contain one ordinary root-level .deb. No paths, symlinks, encryption or ZIP64.
+static NSData *SXExtractSingleDeb(NSData *zip) {
+    const uint8_t *b=zip.bytes; NSUInteger n=zip.length;
+    if(n<76)return nil;
+    NSUInteger start=n>65557?n-65557:0, end=NSNotFound;
+    for(NSUInteger i=n-22;;i--) {
+        if(SXZip32(b+i)==0x06054b50 && i+22+SXZip16(b+i+20)==n) {end=i;break;}
+        if(i==start)break;
+    }
+    if(end==NSNotFound || SXZip16(b+end+4)!=0 || SXZip16(b+end+6)!=0 ||
+       SXZip16(b+end+8)!=1 || SXZip16(b+end+10)!=1)return nil;
+    NSUInteger central=SXZip32(b+end+16),centralSize=SXZip32(b+end+12);
+    if(central>n || centralSize>n-central || centralSize<46 || SXZip32(b+central)!=0x02014b50)return nil;
+    NSUInteger count=SXZip16(b+central+28)+SXZip16(b+central+30)+SXZip16(b+central+32)+46;
+    if(count!=centralSize || central+count>n)return nil;
+    NSUInteger comp=SXZip32(b+central+20),raw=SXZip32(b+central+24),local=SXZip32(b+central+42);
+    uint16_t flag=SXZip16(b+central+8),method=SXZip16(b+central+10);
+    NSUInteger type=(SXZip32(b+central+38)>>16)&0170000;
+    if((flag&1)|| (method!=0 && method!=8) || raw<80 || raw>20*1024*1024 || comp==0 ||
+       (type!=0 && type!=0100000) || local>n || n-local<30 || SXZip32(b+local)!=0x04034b50 ||
+       SXZip16(b+local+8)!=method)return nil;
+    NSData *nameBytes=[NSData dataWithBytes:b+central+46 length:SXZip16(b+central+28)];
+    NSString *name=[[NSString alloc]initWithData:nameBytes encoding:NSUTF8StringEncoding];
+    if(!name.length || name.length>180 || [name containsString:@"/"] || [name containsString:@"\\"] || ![name hasSuffix:@".deb"])return nil;
+    NSUInteger offset=local+30+SXZip16(b+local+26)+SXZip16(b+local+28);
+    if(offset>n || comp>n-offset)return nil;
+    NSData *deb=nil;
+    if(method==0 && comp==raw)deb=[zip subdataWithRange:NSMakeRange(offset,comp)];
+    if(method==8) {
+        NSMutableData *buf=[NSMutableData dataWithLength:raw];
+        z_stream z={0};
+        if(inflateInit2(&z,-MAX_WBITS)!=Z_OK)return nil;
+        z.next_in=(Bytef *)(b+offset);z.avail_in=(uInt)comp;
+        z.next_out=buf.mutableBytes;z.avail_out=(uInt)raw;
+        int rc=inflate(&z,Z_FINISH);BOOL ok=rc==Z_STREAM_END && z.total_out==raw && z.total_in==comp;
+        inflateEnd(&z);
+        if(ok)deb=buf;
+    }
+    if(!deb || crc32(0,(const Bytef *)deb.bytes,(uInt)deb.length)!=SXZip32(b+central+16))return nil;
+    // Minimal Debian ar layout check; internal control metadata is NOT validated here.
+    const uint8_t *d=deb.bytes;
+    return deb.length>=8 && memcmp(d,"!<arch>\\n",8)==0 ? deb:nil;
+}
+
 @interface SXPrivateUpdater : UITableViewController
 @property(nonatomic,copy) NSString *statusText;
 @property(nonatomic,assign) BOOL busy;
@@ -61,11 +109,11 @@ static BOOL SXUpdateDeleteToken(void) {
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 5; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-    NSArray *titles = @[@"GitHubトークンを登録", @"最新ビルドを確認", @"成果物ZIPを取得・共有", @"GitHubトークンを削除", @"現在の状態"];
+    NSArray *titles = @[@"GitHubトークンを登録", @"最新ビルドを確認", @"debを取得・共有", @"GitHubトークンを削除", @"現在の状態"];
     c.textLabel.text = titles[p.row];
     if (p.row == 0) c.detailTextLabel.text = SXUpdateToken().length ? @"Keychainに登録済み" : @"未登録";
     if (p.row == 1) c.detailTextLabel.text = @"非公開develop / 成功したpushのみ";
-    if (p.row == 2) c.detailTextLabel.text = @"ダウンロード後にFilzaで展開・確認";
+    if (p.row == 2) c.detailTextLabel.text = @"Filzaでパッケージ情報を確認してインストール";
     if (p.row == 3) c.detailTextLabel.text = @"端末内の認証情報だけを削除";
     if (p.row == 4) c.detailTextLabel.text = self.statusText;
     c.detailTextLabel.numberOfLines = 0;
@@ -160,13 +208,15 @@ static BOOL SXUpdateDeleteToken(void) {
             NSData *zip=!failure?[self updateFetch:signedURL token:nil maximum:33554432 response:&zipResponse error:&failure]:nil;
             if(!failure && (zipResponse.statusCode!=200 || zip.length<22 || memcmp(zip.bytes,(const unsigned char[]){0x50,0x4b,0x03,0x04},4)!=0))
                 failure=[NSError errorWithDomain:@"SXUpdate" code:4 userInfo:@{NSLocalizedDescriptionKey:@"ZIPの受信・形式確認に失敗"}];
+            NSData *deb=!failure?SXExtractSingleDeb(zip):nil;
+            if(!failure && !deb)failure=[NSError errorWithDomain:@"SXUpdate" code:6 userInfo:@{NSLocalizedDescriptionKey:@"単一debの抽出・整合性確認に失敗"}];
             if(!failure) {
-                NSString *name=[NSString stringWithFormat:@"SXProbe-build-%@.zip",best[@"id"]];
+                NSString *name=[NSString stringWithFormat:@"SXProbe-build-%@.deb",best[@"id"]];
                 NSURL *dir=[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES];
                 saved=[dir URLByAppendingPathComponent:name];
-                if(![zip writeToURL:saved options:NSDataWritingAtomic error:&failure])saved=nil;
+                if(![deb writeToURL:saved options:NSDataWritingAtomic error:&failure])saved=nil;
             }
-            if(!failure) message=@"✅ 非公開ZIPの取得成功。Filzaで解凍し、debを確認してからインストールしてね。";
+            if(!failure) message=@"✅ deb抽出成功。Filzaでパッケージ名・バージョンを確認してインストールしてね。";
         } @catch(NSException *e) {
             failure=[NSError errorWithDomain:@"SXUpdate" code:5 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"取得処理の例外: %@",e.name]}];
         }
