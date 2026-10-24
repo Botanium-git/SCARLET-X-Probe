@@ -8,6 +8,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = ScarletXProbe
 ScarletXProbe_FILES = Tweak.xm ProbePanel.m ProbeDriveOAuthTest.m ProbePrivateUpdate.m
 ScarletXProbe_FRAMEWORKS = Foundation UIKit AuthenticationServices Security
+ScarletXProbe_LIBRARIES = z
 ScarletXProbe_CFLAGS = -fobjc-arc
 ScarletXProbe_INSTALL_PATH = /Library/MobileSubstrate/DynamicLibraries
 
