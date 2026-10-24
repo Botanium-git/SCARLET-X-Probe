@@ -164,6 +164,71 @@ static NSArray *SXFontUpdateABIMetadata(Class cls) {
     return result;
 }
 
+// Narrow opt-in-free observation: inspect only the font object supplied to
+// profile-owned TFNAttributedTextView updates; pass every argument unchanged.
+typedef void (*SXTextUpdateIMP)(id,SEL,id,id,id,id,id,NSInteger,NSInteger);
+typedef void (*SXRichUpdateIMP)(id,SEL,id,id,id,id,NSInteger,NSInteger);
+static SXTextUpdateIMP SXOriginalTextUpdate=NULL;
+static SXRichUpdateIMP SXOriginalRichUpdate=NULL;
+static NSUInteger SXFontEvents=0;
+static BOOL SXFontHooksInstalled=NO;
+static BOOL SXIsProfileOwned(id object) {
+    if(![object isKindOfClass:UIView.class])return NO;
+    UIView *parent=(UIView *)object;
+    for(NSUInteger i=0;parent && i<24;i++,parent=parent.superview)
+        if([NSStringFromClass(parent.class) isEqualToString:@"T1ProfileUserInfoView"])return YES;
+    return NO;
+}
+static void SXCaptureProfileFont(id object, id font, NSString *source) {
+    if(!SXEnabled || SXFontEvents>=40 || !SXIsProfileOwned(object))return;
+    NSMutableDictionary *data=[@{@"source":source,@"viewClass":NSStringFromClass([object class])?:@"",
+          @"fontObjectClass":font?NSStringFromClass([font class]):@"nil",
+          @"textCaptured":@NO} mutableCopy];
+    if([font isKindOfClass:UIFont.class]) {
+        UIFont *f=(UIFont *)font;
+        data[@"fontName"]=f.fontName?:@"";
+        data[@"pointSize"]=@(f.pointSize);
+        data[@"lineHeight"]=@(f.lineHeight);
+    }
+    UIView *view=(UIView *)object;
+    data[@"width"]=@(view.bounds.size.width);
+    data[@"height"]=@(view.bounds.size.height);
+    SXFontEvents++;
+    SXRecord(@"profile-bio-font-argument",data);
+}
+static void SXObservedTextUpdate(id target, SEL selector, id text, id ranges,
+                                 id font, id color, id activeFont, NSInteger alignment, NSInteger breakMode) {
+    SXCaptureProfileFont(target,font,@"text-update");
+    if(SXOriginalTextUpdate)SXOriginalTextUpdate(target,selector,text,ranges,font,color,activeFont,alignment,breakMode);
+}
+static void SXObservedRichUpdate(id target,SEL selector,id rich,id font,id color,
+                                 id activeFont,NSInteger alignment,NSInteger breakMode) {
+    SXCaptureProfileFont(target,font,@"rich-update");
+    if(SXOriginalRichUpdate)SXOriginalRichUpdate(target,selector,rich,font,color,activeFont,alignment,breakMode);
+}
+static void SXInstallProfileFontObservers(void) {
+    if(SXFontHooksInstalled)return;
+    Class cls=objc_getClass("TFNAttributedTextView");
+    if(!cls)return;
+    SEL textSel=NSSelectorFromString(@"ocf_updateForText:activeRanges:font:color:activeRangesFont:textAlignment:lineBreakMode:");
+    SEL richSel=NSSelectorFromString(@"ocf_updateForExpandedRichText:font:color:activeRangesFont:textAlignment:lineBreakMode:");
+    Method textMethod=class_getInstanceMethod(cls,textSel);
+    Method richMethod=class_getInstanceMethod(cls,richSel);
+    const char *textABI=textMethod?method_getTypeEncoding(textMethod):NULL;
+    const char *richABI=richMethod?method_getTypeEncoding(richMethod):NULL;
+    // Exact encodings observed on official X 12.35 arm64; disable on ABI changes.
+    if(!textABI || !richABI || strcmp(textABI,"v72@0:8@16@24@32@40@48q56q64") ||
+       strcmp(richABI,"v64@0:8@16@24@32@40q48q56"))return;
+    SXOriginalTextUpdate=(SXTextUpdateIMP)method_getImplementation(textMethod);
+    SXOriginalRichUpdate=(SXRichUpdateIMP)method_getImplementation(richMethod);
+    if(!SXOriginalTextUpdate || !SXOriginalRichUpdate)return;
+    // class_replaceMethod installs subclass overrides even if methods were inherited.
+    class_replaceMethod(cls,textSel,(IMP)SXObservedTextUpdate,textABI);
+    class_replaceMethod(cls,richSel,(IMP)SXObservedRichUpdate,richABI);
+    SXFontHooksInstalled=YES;
+    SXRecord(@"profile-font-observer-installed",@{@"abiVerified":@YES,@"textCaptured":@NO});
+}
+
 // Explicit, read-only snapshot. Never exports text, account IDs or view descriptions.
 static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *visited) {
     if(!node || *visited>=1500 || samples.count>=12)return;
@@ -451,8 +516,10 @@ static void SXProbeInit(void) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
                 SXInstallTemporaryEntry();
+                SXInstallProfileFontObservers();
             }];
             SXInstallTemporaryEntry();
+            SXInstallProfileFontObservers();
             SXCollectAutomaticMethodMetadataIfEnabled();
         });
             [[NSNotificationCenter defaultCenter] addObserverForName:UIWindowDidBecomeKeyNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
