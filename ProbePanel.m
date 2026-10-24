@@ -5,6 +5,7 @@ extern BOOL SXDriveIsConnected(void);
 extern NSString *SXDriveCurrentStatus(void);
 extern void SXDriveHandleRow(NSInteger row, UIViewController *host);
 extern void SXOpenPrivateUpdater(UIViewController *host);
+extern void SXStartProbeDownload(UIViewController *host, void (^status)(NSString *));
 extern void SXProbeCheckUpdateNotice(void(^done)(NSString *notice));
 extern NSString *SXProbeOwnVersion(void);
 
@@ -97,6 +98,7 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
 
 @interface SXProbePanel : UITableViewController
 @property(nonatomic,copy) NSString *updateNotice;
+@property(nonatomic,copy) NSString *downloadStatus;
 @end
 
 @implementation SXProbePanel
@@ -105,6 +107,7 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
     [super viewDidLoad];
     self.title = @"SXP";
     self.updateNotice = @"更新確認中…";
+    self.downloadStatus = @"未実行";
     __weak typeof(self) weakSelf=self;
     SXProbeCheckUpdateNotice(^(NSString *notice){
         __strong typeof(weakSelf) self=weakSelf;
@@ -122,7 +125,7 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
 - (void)driveUpdated:(NSNotification *)note { [self.tableView reloadData]; }
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 3; }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section==0 ? 2 : (section==1 ? 4 : 3); }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section==0 ? 2 : (section==1 ? 4 : 4); }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {return @[@"情報",@"診断",@"連携・管理"][section];}
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
@@ -158,7 +161,12 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
     } else if(s==2 && r==2) {
         cell.textLabel.text=@"SXP更新";
+        cell.detailTextLabel.text=@"debを取得・共有";
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
+    } else if(s==2 && r==3) {
+        cell.textLabel.text=@"現在の状態";
+        cell.detailTextLabel.text=self.downloadStatus;
+        cell.detailTextLabel.adjustsFontSizeToFitWidth=YES;
     }
     return cell;
 }
@@ -180,20 +188,27 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
     if(path.section==0 && path.row==1) SXOpenPrivateUpdater(self);
     else if(path.section==1 && path.row==1) [self recordMethodMetadata];
     else if(path.section==1 && path.row==2) {
-        UIAlertController *a=[UIAlertController alertControllerWithTitle:@"診断ログを消去？" message:@"記録済みイベントを削除するわ。" preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertController *a=[UIAlertController alertControllerWithTitle:@"診断ログを消去？" message:@"記録済みの診断イベントを削除します。" preferredStyle:UIAlertControllerStyleAlert];
         [a addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
         [a addAction:[UIAlertAction actionWithTitle:@"消去" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *x){ SXClearEntries();[self.tableView reloadData]; }]];
         [self presentViewController:a animated:YES completion:nil];
     }
     else if(path.section==2 && path.row==0) SXDriveHandleRow(0,self);
     else if(path.section==2 && path.row==1) SXDriveHandleRow(1,self);
-    else if(path.section==2 && path.row==2) SXOpenPrivateUpdater(self);
+    else if(path.section==2 && path.row==2) {
+        self.downloadStatus=@"取得中…";[self.tableView reloadData];
+        __weak typeof(self) weakSelf=self;
+        SXStartProbeDownload(self, ^(NSString *status){
+            __strong typeof(weakSelf) strong=weakSelf;
+            if(strong){strong.downloadStatus=status;[strong.tableView reloadData];}
+        });
+    }
 }
 - (void)recordMethodMetadata {
  // Manual capture remains available even when metadata recording is disabled.
  SXCollectMethodMetadata(NO);
  [self.tableView reloadData];
- UIAlertController *a=[UIAlertController alertControllerWithTitle:@"記録完了" message:@"4クラスの関連メソッド名を記録したわ。Driveへ送信してね。" preferredStyle:UIAlertControllerStyleAlert];
+ UIAlertController *a=[UIAlertController alertControllerWithTitle:@"記録完了" message:@"関連メソッド名を記録しました。必要に応じてDriveへ送信してください。" preferredStyle:UIAlertControllerStyleAlert];
  [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
  [self presentViewController:a animated:YES completion:nil];
 }
