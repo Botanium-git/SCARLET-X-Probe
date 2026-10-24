@@ -140,7 +140,7 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section==0 ? 2 : (section==1 ? 4 : 3); }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {return @[@"情報",@"診断",@"連携・管理"][section];}
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
-    UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:(path.section==2 && path.row==2 ? UITableViewCellStyleSubtitle : UITableViewCellStyleValue1) reuseIdentifier:nil];
     NSBundle *bundle=NSBundle.mainBundle;
     NSInteger s=path.section,r=path.row;
     if(s==0 && r==0) {
@@ -174,9 +174,12 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
     } else if(s==2 && r==2) {
         cell.textLabel.text=@"現在の状態";
         cell.detailTextLabel.text=self.downloadStatus;
-        cell.detailTextLabel.adjustsFontSizeToFitWidth=YES;
+        cell.detailTextLabel.numberOfLines=0;
     }
     return cell;
+}
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)path {
+    return path.section==2 && path.row==2 ? UITableViewAutomaticDimension : 44.0;
 }
 - (void)toggleRecording:(UISwitch *)sender {
     SXEnabled = sender.isOn;
