@@ -276,6 +276,34 @@ typedef void (*SXBioSetterIMP)(id,SEL,id,id,id,BOOL);
 static SXBioSetterIMP SXOriginalBioSetter=NULL;
 static BOOL SXBioSetterInstalled=NO;
 static NSUInteger SXBioSetterCalls=0;
+// Inspect supported object-returning getters after X has set the bio; do not read text content.
+static NSDictionary *SXBioPostSetTypography(id label) {
+    if(!label)return @{};
+    NSMutableDictionary *result=[NSMutableDictionary dictionary];
+    for(NSString *name in @[@"font",@"attributedText",@"attributedString",@"attributedActiveTextModel"]) {
+        SEL selector=NSSelectorFromString(name);
+        Method method=class_getInstanceMethod([label class],selector);
+        const char *encoding=method?method_getTypeEncoding(method):NULL;
+        NSMethodSignature *sig=encoding?[NSMethodSignature signatureWithObjCTypes:encoding]:nil;
+        BOOL safe=(sig && sig.numberOfArguments==2 && strcmp(sig.methodReturnType,"@")==0);
+        result[[name stringByAppendingString:@"Available"]]=@(safe);
+        if(!safe)continue;
+        id value=((id(*)(id,SEL))objc_msgSend)(label,selector);
+        if([value isKindOfClass:UIFont.class]) {
+            UIFont *font=(UIFont *)value;
+            result[@"fontName"]=font.fontName?:@"";
+            result[@"fontPointSize"]=@(font.pointSize);
+            result[@"fontLineHeight"]=@(font.lineHeight);
+        } else if([value isKindOfClass:NSAttributedString.class]) {
+            NSAttributedString *rich=(NSAttributedString *)value;
+            result[[name stringByAppendingString:@"Length"]]=@(rich.length);
+            result[[name stringByAppendingString:@"Typography"]]=SXTypographyMetrics(rich);
+        } else {
+            result[[name stringByAppendingString:@"Class"]]=value?NSStringFromClass([value class]):@"nil";
+        }
+    }
+    return result;
+}
 static void SXObservedBioSetter(id target,SEL selector,id label,id text,id entities,BOOL utf16) {
     SXBioSetterCalls++;
     if(SXEnabled && SXBioSetterCalls<=40) {
@@ -295,6 +323,12 @@ static void SXObservedBioSetter(id target,SEL selector,id label,id text,id entit
         SXRecord(@"profile-bio-setter-call",meta);
     }
     if(SXOriginalBioSetter)SXOriginalBioSetter(target,selector,label,text,entities,utf16);
+    if(SXEnabled && SXBioSetterCalls<=20 && [label isKindOfClass:UIView.class]) {
+        NSMutableDictionary *meta=[SXBioPostSetTypography(label) mutableCopy];
+        meta[@"callIndex"]=@(SXBioSetterCalls);
+        meta[@"textCaptured"]=@NO;
+        SXRecord(@"profile-bio-postset-typography",meta);
+    }
 }
 static void SXInstallBioSetterObserver(void) {
     if(SXBioSetterInstalled)return;
