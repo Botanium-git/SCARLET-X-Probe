@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <dlfcn.h>
 #include <string.h>
 extern BOOL SXDriveIsConnected(void);
@@ -304,6 +305,24 @@ static void SXInstallProfileFontObservers(void) {
 }
 
 // Explicit, read-only snapshot. Never exports text, account IDs or view descriptions.
+// Only called by the explicit manual profile measurement, not by startup scans.
+static void SXCaptureVisibleBioText(UIView *view,NSMutableDictionary *entry) {
+    if(!view.window || view.hidden || view.alpha<=0.01 || CGRectIsEmpty(view.bounds))return;
+    NSString *value=nil;NSString *source=nil;
+    if([view isKindOfClass:UILabel.class]){value=((UILabel *)view).text;source=@"UILabel.text";}
+    else if([view isKindOfClass:UITextView.class]){value=((UITextView *)view).text;source=@"UITextView.text";}
+    else if([NSStringFromClass(view.class) isEqualToString:@"TFNAttributedTextView"]) {
+        // No invocation of unknown private getters: only UIKit accessibility metadata.
+        value=view.accessibilityLabel;source=@"accessibilityLabel";
+    }
+    if(![value isKindOfClass:NSString.class] || !value.length)return;
+    NSUInteger limit=1500;
+    entry[@"visibleText"]=[value substringToIndex:MIN(value.length,limit)];
+    entry[@"textLength"]=@(value.length);
+    entry[@"textTruncated"]=@(value.length>limit);
+    entry[@"explicitNewlines"]=@([[value componentsSeparatedByString:@"\n"] count]-1);
+    entry[@"textSource"]=source;
+}
 static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *visited) {
     if(!node || *visited>=1500 || samples.count>=12)return;
     (*visited)++;
@@ -330,6 +349,7 @@ static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *vi
             if([v isKindOfClass:UILabel.class])rich=((UILabel *)v).attributedText;
             else if([v isKindOfClass:UITextView.class])rich=((UITextView *)v).attributedText;
             if(rich.length)entry[@"typography"]=SXTypographyMetrics(rich);
+            if([kind isEqualToString:@"TFNAttributedTextView"])SXCaptureVisibleBioText(v,entry);
             if([kind isEqualToString:@"TFNAttributedTextView"])
                 {
                 entry[@"availableMetricSelectors"]=SXTextViewMetricSelectorNames(v.class);
@@ -356,7 +376,7 @@ static NSDictionary *SXBioSnapshot(void) {
         }
     }
     return @{@"profileViewCount":@(samples.count),@"visitedViewCount":@(visited),@"samples":samples,
-             @"noTextCollected":@YES};
+             @"manualVisibleTextCapture":@YES};
 }
 
 @interface SXProbePanel : UITableViewController
