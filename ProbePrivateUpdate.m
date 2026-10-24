@@ -91,7 +91,7 @@ static NSData *SXExtractSingleDeb(NSData *zip) {
     if(!deb || crc32(0,(const Bytef *)deb.bytes,(uInt)deb.length)!=SXZip32(b+central+16))return nil;
     // Minimal Debian ar layout check; internal control metadata is NOT validated here.
     const uint8_t *d=deb.bytes;
-    return deb.length>=8 && memcmp(d,"!<arch>\\n",8)==0 ? deb:nil;
+    return deb.length>=8 && memcmp(d,"!<arch>\n",8)==0 ? deb:nil;
 }
 
 @interface SXPrivateUpdater : UITableViewController
