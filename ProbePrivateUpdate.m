@@ -174,21 +174,21 @@ void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
 - (instancetype)init { return [super initWithStyle:UITableViewStyleInsetGrouped]; }
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Probe更新（準備中）";
-    self.statusText = @"GitHub認証の設定と最新版の確認に対応。インストールは未対応。";
+    self.title = @"SXP更新";
+    self.statusText = @"取得したdebをSileoへ共有して更新";
 }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 5; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 3; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-    NSArray *titles = @[@"GitHubトークンを登録", @"最新ビルドを確認", @"debを取得・共有", @"GitHubトークンを削除", @"現在の状態"];
+    NSArray *titles = @[@"GitHub認証設定", @"debを取得・共有", @"現在の状態"];
     c.textLabel.text = titles[p.row];
     if (p.row == 0) c.detailTextLabel.text = SXUpdateToken().length ? @"Keychainに登録済み" : @"未登録";
-    if (p.row == 1) c.detailTextLabel.text = @"非公開develop / 成功したpushのみ";
-    if (p.row == 2) c.detailTextLabel.text = @"Filzaでパッケージ情報を確認してインストール";
-    if (p.row == 3) c.detailTextLabel.text = @"端末内の認証情報だけを削除";
-    if (p.row == 4) c.detailTextLabel.text = self.statusText;
+    
+    if (p.row == 1) c.detailTextLabel.text = @"Sileoへ共有してインストール";
+    
+    if (p.row == 2) c.detailTextLabel.text = self.statusText;
     c.detailTextLabel.numberOfLines = 0;
-    c.accessoryType = p.row <= 3 ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
+    c.accessoryType = p.row <= 1 ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
     return c;
 }
 - (void)setStatus:(NSString *)message {
@@ -204,6 +204,19 @@ void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
     [tableView deselectRowAtIndexPath:p animated:YES];
     if (self.busy) return;
     if (p.row == 0) {
+        if(SXUpdateToken().length) {
+            UIAlertController *manage=[UIAlertController alertControllerWithTitle:@"GitHub認証設定" message:@"現在トークンは登録済みよ。" preferredStyle:UIAlertControllerStyleActionSheet];
+            [manage addAction:[UIAlertAction actionWithTitle:@"変更" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action){[self promptToken];}]];
+            [manage addAction:[UIAlertAction actionWithTitle:@"削除" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action){[self confirmTokenDelete];}]];
+            [manage addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
+            manage.popoverPresentationController.sourceView=self.view;
+            manage.popoverPresentationController.sourceRect=CGRectMake(CGRectGetMidX(self.view.bounds),40,1,1);
+            [self presentViewController:manage animated:YES completion:nil];
+        } else [self promptToken];
+    }
+    else if (p.row == 1) [self downloadArtifact];
+}
+- (void)promptToken {
         UIAlertController *a = [UIAlertController alertControllerWithTitle:@"GitHub認証"
             message:@"SCARLET-X-ProbeのみにActions: Read / Contents: Readを許可した期限付きトークンを入力。公式Xのアプリ領域のKeychainに保存されます。"
             preferredStyle:UIAlertControllerStyleAlert];
@@ -223,20 +236,14 @@ void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
             [self setStatus:SXUpdateSaveToken(token) ? @"✅ Keychainに保存しました（API認証は未検証）" : @"❌ Keychainへの保存に失敗"];
         }]];
         [self presentViewController:a animated:YES completion:nil];
-    } else if (p.row == 1) {
-        [self checkLatest];
-    } else if (p.row == 2) {
-        [self downloadArtifact];
-    } else if (p.row == 3) {
-        UIAlertController *a = [UIAlertController alertControllerWithTitle:@"トークンを削除？" message:@"次回の確認には再登録が必要になるわ。" preferredStyle:UIAlertControllerStyleAlert];
-        [a addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
-        __weak typeof(self) weakSelf = self;
-        [a addAction:[UIAlertAction actionWithTitle:@"削除" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
-            __strong typeof(weakSelf) self = weakSelf;
-            if (self) [self setStatus:SXUpdateDeleteToken() ? @"✅ Keychainから削除しました" : @"❌ 削除できませんでした"];
-        }]];
-        [self presentViewController:a animated:YES completion:nil];
     }
+- (void)confirmTokenDelete {
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"トークンを削除？" message:@"再登録するまで更新できなくなるわ。" preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:@"削除" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+        [self setStatus:SXUpdateDeleteToken()?@"Keychainから削除しました":@"削除に失敗しました"];
+    }]];
+    [self presentViewController:a animated:YES completion:nil];
 }
 
 - (void)downloadArtifact {
