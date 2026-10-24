@@ -336,6 +336,8 @@ static NSDictionary *SXBioSnapshot(void) {
 
 @interface SXProbePanel : UITableViewController
 @property(nonatomic,copy) NSString *updateNotice;
+@property(nonatomic,strong) NSTimer *updatePollTimer;
+@property(nonatomic,assign) BOOL updateRequestInFlight;
 @property(nonatomic,copy) NSString *downloadStatus;
 @end
 
@@ -346,11 +348,7 @@ static NSDictionary *SXBioSnapshot(void) {
     self.title = @"SXP";
     self.updateNotice = @"更新確認中…";
     self.downloadStatus = [[NSUserDefaults standardUserDefaults] stringForKey:SXOperationStatusKey] ?: @"未実行";
-    __weak typeof(self) weakSelf=self;
-    SXProbeCheckUpdateNotice(^(NSString *notice){
-        __strong typeof(weakSelf) self=weakSelf;
-        if(self){self.updateNotice=notice;[self.tableView reloadData];}
-    });
+    [self refreshUpdateNotice];
     if (SXEnabled && !SXRecordingRestored) {
         SXRecordingRestored = YES;
         SXRecord(@"recording-restored",@{@"enabled":@YES});
@@ -360,7 +358,32 @@ static NSDictionary *SXBioSnapshot(void) {
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(closePanel)];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"共有" style:UIBarButtonItemStylePlain target:self action:@selector(exportJSON)];
 }
-- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+- (void)dealloc { [self.updatePollTimer invalidate]; [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    [self.updatePollTimer invalidate];self.updatePollTimer=nil;
+}
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self refreshUpdateNotice];
+}
+- (void)refreshUpdateNotice {
+    if(self.updateRequestInFlight || !self.isViewLoaded || !self.view.window)return;
+    self.updateRequestInFlight=YES;
+    __weak typeof(self) weakSelf=self;
+    SXProbeCheckUpdateNotice(^(NSString *notice) {
+        __strong typeof(weakSelf) strongSelf=weakSelf;
+        if(!strongSelf)return;
+        strongSelf.updateRequestInFlight=NO;
+        strongSelf.updateNotice=notice?:@"";
+        [strongSelf.tableView reloadData];
+        [strongSelf.updatePollTimer invalidate];strongSelf.updatePollTimer=nil;
+        BOOL building=[notice isEqualToString:@"ビルド中"] || [notice isEqualToString:@"ビルド待機中"];
+        if(building && strongSelf.view.window)
+            strongSelf.updatePollTimer=[NSTimer scheduledTimerWithTimeInterval:5.0 target:strongSelf selector:@selector(refreshUpdateNotice) userInfo:nil repeats:NO];
+    });
+}
+
 - (void)driveUpdated:(NSNotification *)note { [self.tableView reloadData]; }
 - (void)operationUpdated:(NSNotification *)note {
     NSString *message=note.userInfo[@"message"];
@@ -385,9 +408,20 @@ static NSDictionary *SXBioSnapshot(void) {
         cell.detailTextLabel.text=[NSString stringWithFormat:@"%@ (%@)",[bundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]?:@"?",[bundle objectForInfoDictionaryKey:@"CFBundleVersion"]?:@"?"];
     } else if(s==0 && r==1) {
         cell.textLabel.text=@"SXP バージョン";
-        cell.detailTextLabel.text=[NSString stringWithFormat:@"%@  %@",SXProbeOwnVersion(),self.updateNotice?:@""];
+        BOOL building=[self.updateNotice isEqualToString:@"ビルド中"] || [self.updateNotice isEqualToString:@"ビルド待機中"];
+        cell.detailTextLabel.text=[NSString stringWithFormat:@"%@  %@",SXProbeOwnVersion(),building?@"":(self.updateNotice?:@"")];
         cell.detailTextLabel.adjustsFontSizeToFitWidth=YES;
-        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
+        if(building) {
+            UILabel *statusLabel=[UILabel new];statusLabel.text=self.updateNotice;
+            statusLabel.font=[UIFont systemFontOfSize:12];statusLabel.textColor=UIColor.secondaryLabelColor;
+            [statusLabel sizeToFit];
+            UIActivityIndicatorView *spinner=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+            [spinner startAnimating];
+            UIStackView *stack=[[UIStackView alloc] initWithArrangedSubviews:@[statusLabel,spinner]];
+            stack.axis=UILayoutConstraintAxisHorizontal;stack.alignment=UIStackViewAlignmentCenter;stack.spacing=5;
+            stack.frame=CGRectMake(0,0,statusLabel.bounds.size.width+spinner.bounds.size.width+5,MAX(statusLabel.bounds.size.height,spinner.bounds.size.height));
+            cell.accessoryView=stack;
+        } else cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
     } else if(s==1 && r==0) {
         cell.textLabel.text=@"メタデータ記録";
         UISwitch *toggle=[UISwitch new];toggle.on=SXEnabled;
