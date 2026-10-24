@@ -94,6 +94,77 @@ static NSData *SXExtractSingleDeb(NSData *zip) {
     return deb.length>=8 && memcmp(d,(const uint8_t[]){33,60,97,114,99,104,62,10},8)==0 ? deb:nil;
 }
 
+
+// Installed version is generated at package build time for this known Probe revision.
+// Never use the official X application's CFBundle version as the Probe version.
+NSString *SXProbeOwnVersion(void) { return @"0.1.16"; }
+void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
+    if(!done)return;
+    NSString *token=SXUpdateToken();
+    if(!token.length){done(@"認証未設定");return;}
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        NSString *result=@"確認できませんでした";
+        dispatch_semaphore_t sem=dispatch_semaphore_create(0);
+        NSString *url=[NSString stringWithFormat:@"https://api.github.com/repos/%@/actions/workflows/build.yml/runs?branch=develop&event=push&status=success&per_page=20",SXUpdateRepo];
+        NSMutableURLRequest *req=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:url]];
+        req.timeoutInterval=25;
+        [req setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
+        [req setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
+        NSURLSession *session=[NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration delegate:[SXNoCredentialRedirect new] delegateQueue:nil];
+        __block NSData *raw=nil;__block NSURLResponse *response=nil;__block NSError *failure=nil;
+        NSURLSessionDataTask *task=[session dataTaskWithRequest:req completionHandler:^(NSData *data,NSURLResponse *r,NSError *e){raw=data;response=r;failure=e;dispatch_semaphore_signal(sem);}];
+        [task resume];
+        if(dispatch_semaphore_wait(sem,dispatch_time(DISPATCH_TIME_NOW,40*NSEC_PER_SEC))) {[task cancel];failure=[NSError errorWithDomain:@"SXP" code:1 userInfo:nil];}
+        [session invalidateAndCancel];
+        if(!failure && [(NSHTTPURLResponse *)response statusCode]==200 && raw.length<2097152) {
+            NSDictionary *json=[NSJSONSerialization JSONObjectWithData:raw options:0 error:nil];
+            NSDictionary *best=nil;
+            for(NSDictionary *run in json[@"workflow_runs"]) {
+                if(![run isKindOfClass:NSDictionary.class] || ![run[@"head_branch"] isEqual:@"develop"] ||
+                   ![run[@"event"] isEqual:@"push"] || ![run[@"status"] isEqual:@"completed"] ||
+                   ![run[@"conclusion"] isEqual:@"success"] || ![run[@"path"] hasSuffix:@"build.yml"])continue;
+                if(!best || [run[@"id"] longLongValue]>[best[@"id"] longLongValue])best=run;
+            }
+            NSString *sha=[best[@"head_sha"] isKindOfClass:NSString.class]?best[@"head_sha"]:nil;
+            if(sha.length==40) {
+                NSString *endpoint=[NSString stringWithFormat:@"https://api.github.com/repos/%@/contents/control?ref=%@",SXUpdateRepo,sha];
+                NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:endpoint]];
+                r.timeoutInterval=25;
+                [r setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
+                [r setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
+                dispatch_semaphore_t gate=dispatch_semaphore_create(0);
+                __block NSData *data=nil;__block NSURLResponse *res=nil;__block NSError *err=nil;
+                NSURLSession *s2=[NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration delegate:[SXNoCredentialRedirect new] delegateQueue:nil];
+                NSURLSessionDataTask *t=[s2 dataTaskWithRequest:r completionHandler:^(NSData *d,NSURLResponse *rr,NSError *e){data=d;res=rr;err=e;dispatch_semaphore_signal(gate);}];
+                [t resume];
+                if(dispatch_semaphore_wait(gate,dispatch_time(DISPATCH_TIME_NOW,40*NSEC_PER_SEC))){[t cancel];err=[NSError errorWithDomain:@"SXP" code:2 userInfo:nil];}
+                [s2 invalidateAndCancel];
+                if(!err && [(NSHTTPURLResponse *)res statusCode]==200 && data.length<65536) {
+                    NSDictionary *obj=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+                    NSString *encoded=[obj[@"content"] isKindOfClass:NSString.class]?obj[@"content"]:nil;
+                    NSData *decoded=[[NSData alloc]initWithBase64EncodedString:encoded options:NSDataBase64DecodingIgnoreUnknownCharacters];
+                    NSString *control=[[NSString alloc]initWithData:decoded encoding:NSUTF8StringEncoding];
+                    NSMutableDictionary *fields=[NSMutableDictionary dictionary];
+                    for(NSString *line in [control componentsSeparatedByString:@"\n"]) {
+                        NSRange separator=[line rangeOfString:@": "];
+                        if(separator.location!=NSNotFound)fields[[line substringToIndex:separator.location]]=[line substringFromIndex:separator.location+2];
+                    }
+                    NSString *v=fields[@"Version"];
+                    NSCharacterSet *allowed=[NSCharacterSet characterSetWithCharactersInString:@"0123456789."];
+                    if([fields[@"Package"] isEqual:@"com.botanium.scarletxprobe"] &&
+                       [fields[@"Architecture"] isEqual:@"iphoneos-arm64e"] && v.length && v.length<30 &&
+                       [v rangeOfCharacterFromSet:allowed.invertedSet].location==NSNotFound) {
+                        NSComparisonResult order=[v compare:SXProbeOwnVersion() options:NSNumericSearch];
+                        result=order==NSOrderedDescending?[NSString stringWithFormat:@"最新版 %@ あり",v]:@"";
+                    }
+                }
+            }
+        }
+        NSString *notice=result;
+        dispatch_async(dispatch_get_main_queue(),^{done(notice);});
+    });
+}
+
 @interface SXPrivateUpdater : UITableViewController
 @property(nonatomic,copy) NSString *statusText;
 @property(nonatomic,assign) BOOL busy;
