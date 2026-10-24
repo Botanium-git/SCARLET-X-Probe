@@ -98,6 +98,47 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
 }
 
 
+// Typography metrics only. No text content or attributed strings leave this function.
+static NSArray *SXTypographyMetrics(NSAttributedString *value) {
+    if(![value isKindOfClass:NSAttributedString.class] || value.length==0)return @[];
+    NSMutableArray *found=[NSMutableArray array];
+    [value enumerateAttributesInRange:NSMakeRange(0,value.length) options:0 usingBlock:^(NSDictionary *attrs,NSRange range,BOOL *stop) {
+        UIFont *font=attrs[NSFontAttributeName];
+        NSParagraphStyle *paragraph=attrs[NSParagraphStyleAttributeName];
+        NSMutableDictionary *metric=[NSMutableDictionary dictionary];
+        if([font isKindOfClass:UIFont.class]) {
+            metric[@"fontName"]=font.fontName?:@"";
+            metric[@"fontPointSize"]=@(font.pointSize);
+            metric[@"lineHeight"]=@(font.lineHeight);
+        }
+        if([paragraph isKindOfClass:NSParagraphStyle.class]) {
+            metric[@"lineSpacing"]=@(paragraph.lineSpacing);
+            metric[@"paragraphSpacing"]=@(paragraph.paragraphSpacing);
+            metric[@"lineHeightMultiple"]=@(paragraph.lineHeightMultiple);
+            metric[@"minimumLineHeight"]=@(paragraph.minimumLineHeight);
+            metric[@"maximumLineHeight"]=@(paragraph.maximumLineHeight);
+        }
+        // Export only a bounded set of distinct styles, never ranges or text length.
+        if(metric.count && ![found containsObject:metric] && found.count<12)[found addObject:metric];
+    }];
+    return found;
+}
+static NSArray *SXTextViewMetricSelectorNames(Class cls) {
+    NSMutableArray *selected=[NSMutableArray array];
+    for(Class cur=cls;cur && cur!=NSObject.class && selected.count<30;cur=class_getSuperclass(cur)) {
+        unsigned int count=0;Method *methods=class_copyMethodList(cur,&count);
+        for(unsigned int i=0;i<count && selected.count<30;i++) {
+            NSString *name=NSStringFromSelector(method_getName(methods[i]));
+            NSString *lower=name.lowercaseString;
+            if(([lower containsString:@"font"] || [lower containsString:@"attributed"] ||
+                [lower containsString:@"layout"] || [lower containsString:@"lineheight"]) &&
+                ![selected containsObject:name])[selected addObject:name];
+        }
+        if(methods)free(methods);
+    }
+    return selected;
+}
+
 // Explicit, read-only snapshot. Never exports text, account IDs or view descriptions.
 static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *visited) {
     if(!node || *visited>=1500 || samples.count>=12)return;
@@ -117,7 +158,16 @@ static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *vi
             UIFont *font=nil;
             if([v isKindOfClass:UILabel.class])font=((UILabel *)v).font;
             else if([v isKindOfClass:UITextView.class])font=((UITextView *)v).font;
-            if(font){entry[@"fontName"]=font.fontName?:@"";entry[@"fontPointSize"]=@(font.pointSize);}
+            if(font){entry[@"fontName"]=font.fontName?:@"";entry[@"fontPointSize"]=@(font.pointSize);entry[@"fontLineHeight"]=@(font.lineHeight);}
+            entry[@"hidden"]=@(v.hidden);
+            entry[@"alpha"]=@(v.alpha);
+            entry[@"onScreen"]=@(v.window!=nil && !v.hidden && v.alpha>0.01 && bounds.size.width>0 && bounds.size.height>0);
+            NSAttributedString *rich=nil;
+            if([v isKindOfClass:UILabel.class])rich=((UILabel *)v).attributedText;
+            else if([v isKindOfClass:UITextView.class])rich=((UITextView *)v).attributedText;
+            if(rich.length)entry[@"typography"]=SXTypographyMetrics(rich);
+            if([kind isEqualToString:@"TFNAttributedTextView"])
+                entry[@"availableMetricSelectors"]=SXTextViewMetricSelectorNames(v.class);
             if(v==node || font || [kind localizedCaseInsensitiveContainsString:@"bio"] ||
                [kind localizedCaseInsensitiveContainsString:@"attributedtext"]) [children addObject:entry];
             for(UIView *child in v.subviews)if(pending.count<300)[pending addObject:child];
