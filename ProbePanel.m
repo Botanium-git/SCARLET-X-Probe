@@ -14,6 +14,7 @@ static dispatch_queue_t SXQueue;
 static BOOL SXEnabled = NO;
 static BOOL SXRecordingRestored = NO;
 static NSString * const SXRecordingKey = @"com.botanium.sxprobe.metadata.enabled";
+static NSString * const SXOperationStatusKey = @"com.botanium.sxprobe.operation.last-status";
 static NSString *SXLogPath(void) {
     NSURL *dir = [[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask] firstObject];
     dir = [dir URLByAppendingPathComponent:@"ScarletXProbe" isDirectory:YES];
@@ -107,7 +108,7 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
     [super viewDidLoad];
     self.title = @"SXP";
     self.updateNotice = @"更新確認中…";
-    self.downloadStatus = @"未実行";
+    self.downloadStatus = [[NSUserDefaults standardUserDefaults] stringForKey:SXOperationStatusKey] ?: @"未実行";
     __weak typeof(self) weakSelf=self;
     SXProbeCheckUpdateNotice(^(NSString *notice){
         __strong typeof(weakSelf) self=weakSelf;
@@ -118,11 +119,22 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
         SXRecord(@"recording-restored",@{@"enabled":@YES});
     }
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(driveUpdated:) name:@"SXDriveStateChanged" object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(operationUpdated:) name:@"SXPOperationStatusChanged" object:nil];
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(closePanel)];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"共有" style:UIBarButtonItemStylePlain target:self action:@selector(exportJSON)];
 }
 - (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
 - (void)driveUpdated:(NSNotification *)note { [self.tableView reloadData]; }
+- (void)operationUpdated:(NSNotification *)note {
+    NSString *message=note.userInfo[@"message"];
+    if (![message isKindOfClass:NSString.class] || !message.length)return;
+    dispatch_async(dispatch_get_main_queue(),^{[self setOperationStatus:message];});
+}
+- (void)setOperationStatus:(NSString *)message {
+    self.downloadStatus=message;
+    [[NSUserDefaults standardUserDefaults] setObject:message forKey:SXOperationStatusKey];
+    [self.tableView reloadData];
+}
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 3; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section==0 ? 2 : (section==1 ? 4 : 3); }
@@ -191,11 +203,11 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
     }
     else if(path.section==2 && path.row==0) SXDriveHandleRow(1,self);
     else if(path.section==2 && path.row==1) {
-        self.downloadStatus=@"取得中…";[self.tableView reloadData];
+        [self setOperationStatus:@"更新: debを取得中…"];
         __weak typeof(self) weakSelf=self;
         SXStartProbeDownload(self, ^(NSString *status){
             __strong typeof(weakSelf) strong=weakSelf;
-            if(strong){strong.downloadStatus=status;[strong.tableView reloadData];}
+            if(strong){[strong setOperationStatus:[@"更新: " stringByAppendingString:status?:@"状態不明"]];}
         });
     }
 }
