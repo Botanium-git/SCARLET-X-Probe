@@ -245,6 +245,31 @@ static NSDictionary *SXDispatchEntry(Class cls,SEL selector,IMP observer,IMP ori
              @"currentIsOriginal":@(actual!=NULL && actual==original),
              @"currentImage":SXIMPImageName(actual),@"originalImage":SXIMPImageName(original)};
 }
+// Read-only ABI preflight for the profile owner's own bio configuration path.
+// No method replacement, argument invocation, or text extraction.
+static void SXRecordProfileBioSetterABI(void) {
+    Class cls=objc_getClass("T1ProfileUserInfoView");
+    SEL sel=NSSelectorFromString(@"_t1_setBioLabel:withText:entities:isUTF16Entities:");
+    Method method=cls?class_getInstanceMethod(cls,sel):NULL;
+    const char *encoding=method?method_getTypeEncoding(method):NULL;
+    NSMethodSignature *sig=encoding?[NSMethodSignature signatureWithObjCTypes:encoding]:nil;
+    NSMutableArray *arguments=[NSMutableArray array];
+    for(NSUInteger i=0;sig && i<sig.numberOfArguments;i++) {
+        const char *type=[sig getArgumentTypeAtIndex:i];
+        [arguments addObject:type?[NSString stringWithUTF8String:type]:@"unknown"];
+    }
+    IMP imp=method?method_getImplementation(method):NULL;
+    SXRecord(@"profile-bio-setter-abi",@{
+        @"class":@"T1ProfileUserInfoView",
+        @"selector":NSStringFromSelector(sel),
+        @"exists":@(method!=NULL),
+        @"typeEncoding":encoding?[NSString stringWithUTF8String:encoding]:@"",
+        @"argumentTypes":arguments,
+        @"returnType":sig?[NSString stringWithUTF8String:sig.methodReturnType]:@"",
+        @"implementationImage":SXIMPImageName(imp),
+        @"textCaptured":@NO
+    });
+}
 static void SXRecordFontDispatchStatus(void) {
     Class cls=objc_getClass("TFNAttributedTextView");
     SEL textSel=NSSelectorFromString(@"ocf_updateForText:activeRanges:font:color:activeRangesFont:textAlignment:lineBreakMode:");
@@ -493,6 +518,7 @@ static NSDictionary *SXBioSnapshot(void) {
 - (void)captureProfileLayout {
     if(SXFontHooksInstalled)SXFlushFontCounters();
     SXRecordFontDispatchStatus();
+    SXRecordProfileBioSetterABI();
     NSDictionary *snapshot=SXBioSnapshot();
     SXRecord(@"profile-bio-view-snapshot",snapshot);
     [self.tableView reloadData];
