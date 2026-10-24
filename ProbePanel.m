@@ -97,6 +97,51 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
  SXCollectMethodMetadata(YES);
 }
 
+
+// Explicit, read-only snapshot. Never exports text, account IDs or view descriptions.
+static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *visited) {
+    if(!node || *visited>=1500 || samples.count>=12)return;
+    (*visited)++;
+    NSString *cls=NSStringFromClass(node.class);
+    if([cls isEqualToString:@"T1ProfileUserInfoView"]) {
+        NSMutableArray *children=[NSMutableArray array];
+        NSMutableArray *pending=[NSMutableArray arrayWithObject:node];
+        NSUInteger examined=0;
+        while(pending.count && examined<300 && children.count<100) {
+            UIView *v=pending.firstObject;[pending removeObjectAtIndex:0];examined++;
+            NSString *kind=NSStringFromClass(v.class);
+            CGRect frame=v.frame, bounds=v.bounds;
+            NSMutableDictionary *entry=[@{@"class":kind?:@"unknown",
+              @"frame":@[@(frame.origin.x),@(frame.origin.y),@(frame.size.width),@(frame.size.height)],
+              @"bounds":@[@(bounds.origin.x),@(bounds.origin.y),@(bounds.size.width),@(bounds.size.height)]} mutableCopy];
+            UIFont *font=nil;
+            if([v isKindOfClass:UILabel.class])font=((UILabel *)v).font;
+            else if([v isKindOfClass:UITextView.class])font=((UITextView *)v).font;
+            if(font){entry[@"fontName"]=font.fontName?:@"";entry[@"fontPointSize"]=@(font.pointSize);}
+            if(v==node || font || [kind localizedCaseInsensitiveContainsString:@"bio"] ||
+               [kind localizedCaseInsensitiveContainsString:@"attributedtext"]) [children addObject:entry];
+            for(UIView *child in v.subviews)if(pending.count<300)[pending addObject:child];
+        }
+        [samples addObject:@{@"rootClass":cls,@"subviews":children,@"examined":@(examined)}];
+        return;
+    }
+    for(UIView *child in node.subviews)SXScanBioViews(child,samples,visited);
+}
+static NSDictionary *SXBioSnapshot(void) {
+    NSAssert(NSThread.isMainThread,@"Capture must run on main thread");
+    NSMutableArray *samples=[NSMutableArray array];
+    NSUInteger visited=0;
+    for(UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if(![scene isKindOfClass:UIWindowScene.class] || scene.activationState!=UISceneActivationStateForegroundActive)continue;
+        for(UIWindow *window in ((UIWindowScene *)scene).windows) {
+            if(window.hidden)continue;
+            SXScanBioViews(window,samples,&visited);
+        }
+    }
+    return @{@"profileViewCount":@(samples.count),@"visitedViewCount":@(visited),@"samples":samples,
+             @"noTextCollected":@YES};
+}
+
 @interface SXProbePanel : UITableViewController
 @property(nonatomic,copy) NSString *updateNotice;
 @property(nonatomic,copy) NSString *downloadStatus;
@@ -137,7 +182,7 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
 }
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 3; }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section==0 ? 2 : (section==1 ? 4 : 3); }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section==0 ? 2 : (section==1 ? 5 : 3); }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {return @[@"情報",@"診断",@"連携・管理"][section];}
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:(path.section==2 && path.row==2 ? UITableViewCellStyleSubtitle : UITableViewCellStyleValue1) reuseIdentifier:nil];
@@ -160,8 +205,12 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
         cell.textLabel.text=@"クラスメソッド情報を記録";
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
     } else if(s==1 && r==2) {
-        cell.textLabel.text=@"診断ログを消去";cell.textLabel.textColor=UIColor.systemRedColor;
+        cell.textLabel.text=@"プロフィール表示を計測";
+        cell.detailTextLabel.text=@"文字列を取得しません";
+        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
     } else if(s==1 && r==3) {
+        cell.textLabel.text=@"診断ログを消去";cell.textLabel.textColor=UIColor.systemRedColor;
+    } else if(s==1 && r==4) {
         cell.textLabel.text=@"記録イベント数";
         cell.detailTextLabel.text=[SXLogSummary()[@"count"] description];
     } else if(s==2 && r==0) {
@@ -198,7 +247,8 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
     [tableView deselectRowAtIndexPath:path animated:YES];
     if(path.section==0 && path.row==1) SXOpenPrivateUpdater(self);
     else if(path.section==1 && path.row==1) [self recordMethodMetadata];
-    else if(path.section==1 && path.row==2) {
+    else if(path.section==1 && path.row==2) [self captureProfileLayout];
+    else if(path.section==1 && path.row==3) {
         UIAlertController *a=[UIAlertController alertControllerWithTitle:@"診断ログを消去？" message:@"記録済みの診断イベントを削除します。" preferredStyle:UIAlertControllerStyleAlert];
         [a addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
         [a addAction:[UIAlertAction actionWithTitle:@"消去" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *x){ SXClearEntries();[self.tableView reloadData]; }]];
@@ -213,6 +263,17 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
             if(strong){[strong setOperationStatus:[@"更新: " stringByAppendingString:status?:@"状態不明"]];}
         });
     }
+}
+- (void)captureProfileLayout {
+    NSDictionary *snapshot=SXBioSnapshot();
+    SXRecord(@"profile-bio-view-snapshot",snapshot);
+    [self.tableView reloadData];
+    NSUInteger count=[snapshot[@"profileViewCount"] unsignedIntegerValue];
+    NSString *message=count?[NSString stringWithFormat:@"プロフィール表示の計測結果を%lu件記録しました。診断JSONをDriveへ送信してください。",(unsigned long)count]:
+       @"対象のプロフィール表示が見つかりませんでした。プロフィール画面を表示した状態で再実行してください。";
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"プロフィール表示計測" message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)recordMethodMetadata {
  // Manual capture remains available even when metadata recording is disabled.
