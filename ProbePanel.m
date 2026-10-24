@@ -172,6 +172,12 @@ typedef void (*SXRichUpdateIMP)(id,SEL,id,id,id,id,NSInteger,NSInteger);
 static SXTextUpdateIMP SXOriginalTextUpdate=NULL;
 static SXRichUpdateIMP SXOriginalRichUpdate=NULL;
 static NSUInteger SXFontEvents=0;
+static NSUInteger SXFontTotalText=0, SXFontTotalRich=0, SXFontAccepted=0, SXFontRejected=0;
+static NSUInteger SXFontNoSuperview=0, SXFontNotProfile=0;
+static void SXFlushFontCounters(void) {
+    SXRecord(@"profile-font-observer-counters",@{@"textCalls":@(SXFontTotalText),@"richCalls":@(SXFontTotalRich),@"accepted":@(SXFontAccepted),@"rejected":@(SXFontRejected),@"noSuperview":@(SXFontNoSuperview),@"notProfileAncestor":@(SXFontNotProfile),@"textCaptured":@NO});
+}
+
 static BOOL SXFontHooksInstalled=NO;
 static BOOL SXIsProfileOwned(id object) {
     if(![object isKindOfClass:UIView.class])return NO;
@@ -181,7 +187,12 @@ static BOOL SXIsProfileOwned(id object) {
     return NO;
 }
 static void SXCaptureProfileFont(id object, id font, NSString *source) {
-    if(!SXEnabled || SXFontEvents>=40 || !SXIsProfileOwned(object))return;
+    if(!SXEnabled)return;
+    BOOL isProfile=SXIsProfileOwned(object);
+    if(!isProfile) { SXFontRejected++; if([object isKindOfClass:UIView.class] && !((UIView *)object).superview)SXFontNoSuperview++; else SXFontNotProfile++; }
+    else SXFontAccepted++;
+    if(((SXFontTotalText+SXFontTotalRich)%25)==1)SXFlushFontCounters();
+    if(!isProfile || SXFontEvents>=40)return;
     NSMutableDictionary *data=[@{@"source":source,@"viewClass":NSStringFromClass([object class])?:@"",
           @"fontObjectClass":font?NSStringFromClass([font class]):@"nil",
           @"textCaptured":@NO} mutableCopy];
@@ -199,11 +210,13 @@ static void SXCaptureProfileFont(id object, id font, NSString *source) {
 }
 static void SXObservedTextUpdate(id target, SEL selector, id text, id ranges,
                                  id font, id color, id activeFont, NSInteger alignment, NSInteger breakMode) {
+    SXFontTotalText++;
     SXCaptureProfileFont(target,font,@"text-update");
     if(SXOriginalTextUpdate)SXOriginalTextUpdate(target,selector,text,ranges,font,color,activeFont,alignment,breakMode);
 }
 static void SXObservedRichUpdate(id target,SEL selector,id rich,id font,id color,
                                  id activeFont,NSInteger alignment,NSInteger breakMode) {
+    SXFontTotalRich++;
     SXCaptureProfileFont(target,font,@"rich-update");
     if(SXOriginalRichUpdate)SXOriginalRichUpdate(target,selector,rich,font,color,activeFont,alignment,breakMode);
 }
@@ -409,6 +422,7 @@ static NSDictionary *SXBioSnapshot(void) {
     }
 }
 - (void)captureProfileLayout {
+    if(SXFontHooksInstalled)SXFlushFontCounters();
     NSDictionary *snapshot=SXBioSnapshot();
     SXRecord(@"profile-bio-view-snapshot",snapshot);
     [self.tableView reloadData];
