@@ -128,7 +128,7 @@ static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *vi
     for(UIView *child in node.subviews)SXScanBioViews(child,samples,visited);
 }
 static NSDictionary *SXBioSnapshot(void) {
-    NSAssert(NSThread.isMainThread,@"Capture must run on main thread");
+    if (![NSThread isMainThread]) return @{@"profileViewCount":@0,@"visitedViewCount":@0,@"samples":@[],@"error":@"main-thread-required",@"noTextCollected":@YES};
     NSMutableArray *samples=[NSMutableArray array];
     NSUInteger visited=0;
     for(UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
