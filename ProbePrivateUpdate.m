@@ -97,7 +97,7 @@ static NSData *SXExtractSingleDeb(NSData *zip) {
 
 // Installed version is generated at package build time for this known Probe revision.
 // Never use the official X application's CFBundle version as the Probe version.
-NSString *SXProbeOwnVersion(void) { return @"0.1.16"; }
+NSString *SXProbeOwnVersion(void) { return @"0.1.17"; }
 void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
     if(!done)return;
     NSString *token=SXUpdateToken();
@@ -165,34 +165,39 @@ void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
     });
 }
 
+extern BOOL SXDriveIsConnected(void);
+extern void SXDriveHandleRow(NSInteger row, UIViewController *host);
 @interface SXPrivateUpdater : UITableViewController
 @property(nonatomic,copy) NSString *statusText;
 @property(nonatomic,assign) BOOL busy;
+@property(nonatomic,weak) UIViewController *shareHost;
+@property(nonatomic,copy) void (^progress)(NSString *);
 @end
 
 @implementation SXPrivateUpdater
 - (instancetype)init { return [super initWithStyle:UITableViewStyleInsetGrouped]; }
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"SXP更新";
-    self.statusText = @"取得したdebをSileoへ共有して更新";
+    self.title = @"連携設定";
+    self.statusText = @"";
 }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 3; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 2; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-    NSArray *titles = @[@"GitHub認証設定", @"debを取得・共有", @"現在の状態"];
+    NSArray *titles = @[@"Google連携", @"GitHub認証"];
     c.textLabel.text = titles[p.row];
-    if (p.row == 0) c.detailTextLabel.text = SXUpdateToken().length ? @"Keychainに登録済み" : @"未登録";
+    if (p.row == 0) c.detailTextLabel.text = SXDriveIsConnected() ? @"接続済み" : @"未接続";
     
-    if (p.row == 1) c.detailTextLabel.text = @"Sileoへ共有してインストール";
+    if (p.row == 1) c.detailTextLabel.text = SXUpdateToken().length ? @"登録済み" : @"未登録";
     
-    if (p.row == 2) c.detailTextLabel.text = self.statusText;
+    
     c.detailTextLabel.numberOfLines = 0;
     c.accessoryType = p.row <= 1 ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
     return c;
 }
 - (void)setStatus:(NSString *)message {
     self.statusText = message;
+    if(self.progress)self.progress(message);
     [self.tableView reloadData];
 }
 - (void)alert:(NSString *)title message:(NSString *)message {
@@ -203,9 +208,10 @@ void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)p {
     [tableView deselectRowAtIndexPath:p animated:YES];
     if (self.busy) return;
-    if (p.row == 0) {
+    if (p.row == 0) { SXDriveHandleRow(0,self.navigationController ?: self); return; }
+    if (p.row == 1) {
         if(SXUpdateToken().length) {
-            UIAlertController *manage=[UIAlertController alertControllerWithTitle:@"GitHub認証設定" message:@"現在トークンは登録済みよ。" preferredStyle:UIAlertControllerStyleActionSheet];
+            UIAlertController *manage=[UIAlertController alertControllerWithTitle:@"GitHub認証設定" message:@"GitHubトークンは登録済みです。" preferredStyle:UIAlertControllerStyleActionSheet];
             [manage addAction:[UIAlertAction actionWithTitle:@"変更" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action){[self promptToken];}]];
             [manage addAction:[UIAlertAction actionWithTitle:@"削除" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action){[self confirmTokenDelete];}]];
             [manage addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
@@ -214,7 +220,6 @@ void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
             [self presentViewController:manage animated:YES completion:nil];
         } else [self promptToken];
     }
-    else if (p.row == 1) [self downloadArtifact];
 }
 - (void)promptToken {
         UIAlertController *a = [UIAlertController alertControllerWithTitle:@"GitHub認証"
@@ -232,13 +237,13 @@ void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
             __strong typeof(weakSelf) self = weakSelf;
             if (!self) return;
             NSString *token = [a.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-            if (!token.length || [token containsString:@"\n"]) { [self alert:@"保存できません" message:@"トークンを確認してね。"]; return; }
+            if (!token.length || [token containsString:@"\n"]) { [self alert:@"保存できません" message:@"トークンを確認してください。"]; return; }
             [self setStatus:SXUpdateSaveToken(token) ? @"✅ Keychainに保存しました（API認証は未検証）" : @"❌ Keychainへの保存に失敗"];
         }]];
         [self presentViewController:a animated:YES completion:nil];
     }
 - (void)confirmTokenDelete {
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"トークンを削除？" message:@"再登録するまで更新できなくなるわ。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"トークンを削除？" message:@"削除後は再登録するまで更新できません。" preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
     [a addAction:[UIAlertAction actionWithTitle:@"削除" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
         [self setStatus:SXUpdateDeleteToken()?@"Keychainから削除しました":@"削除に失敗しました"];
@@ -248,9 +253,9 @@ void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
 
 - (void)downloadArtifact {
     NSString *token=SXUpdateToken();
-    if (!token.length) { [self alert:@"未設定" message:@"先にGitHubトークンを登録してね。"]; return; }
+    if (!token.length) { [self alert:@"未設定" message:@"GitHubトークンを登録してください。"]; return; }
     self.busy=YES; [self setStatus:@"非公開Actionsの成果物を確認中…"];
-    __weak typeof(self) weakSelf=self;
+    SXPrivateUpdater *worker=self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
         NSString *base=[NSString stringWithFormat:@"https://api.github.com/repos/%@",SXUpdateRepo];
         __block NSError *failure=nil;
@@ -294,20 +299,21 @@ void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
                 saved=[dir URLByAppendingPathComponent:name];
                 if(![deb writeToURL:saved options:NSDataWritingAtomic error:&failure])saved=nil;
             }
-            if(!failure) message=@"✅ deb抽出成功。Filzaでパッケージ名・バージョンを確認してインストールしてね。";
+            if(!failure) message=@"debを取得しました。Sileoでパッケージ情報を確認してインストールしてください。";
         } @catch(NSException *e) {
             failure=[NSError errorWithDomain:@"SXUpdate" code:5 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"取得処理の例外: %@",e.name]}];
         }
         if(!message)message=[NSString stringWithFormat:@"❌ 取得失敗: %@",failure.localizedDescription?:@"不明なエラー"];
         dispatch_async(dispatch_get_main_queue(),^{
-            __strong typeof(weakSelf) strong=weakSelf;
-            if(!strong)return;
+            SXPrivateUpdater *strong=worker;
             strong.busy=NO;[strong setStatus:message];
-            if(saved) {
+            UIViewController *presenter=strong.shareHost ?: strong;
+            if(saved && !presenter.view.window) [strong setStatus:@"共有画面を表示できません。SXPを開き直してください。"];
+            if(saved && presenter.view.window) {
                 UIActivityViewController *share=[[UIActivityViewController alloc] initWithActivityItems:@[saved] applicationActivities:nil];
-                share.popoverPresentationController.sourceView=strong.view;
-                share.popoverPresentationController.sourceRect=CGRectMake(CGRectGetMidX(strong.view.bounds),20,1,1);
-                [strong presentViewController:share animated:YES completion:nil];
+                share.popoverPresentationController.sourceView=presenter.view;
+                share.popoverPresentationController.sourceRect=CGRectMake(CGRectGetMidX(presenter.view.bounds),20,1,1);
+                [presenter presentViewController:share animated:YES completion:nil];
             }
         });
     });
@@ -392,4 +398,12 @@ void SXOpenPrivateUpdater(UIViewController *host) {
     if (!host) return;
     SXPrivateUpdater *vc = [SXPrivateUpdater new];
     [host.navigationController pushViewController:vc animated:YES];
+}
+
+void SXStartProbeDownload(UIViewController *host, void (^status)(NSString *)) {
+    if(!host)return;
+    SXPrivateUpdater *worker=[SXPrivateUpdater new];
+    worker.shareHost=host;
+    worker.progress=status;
+    [worker downloadArtifact];
 }
