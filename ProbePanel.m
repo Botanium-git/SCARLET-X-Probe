@@ -1,9 +1,12 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <dlfcn.h>
 extern BOOL SXDriveIsConnected(void);
 extern NSString *SXDriveCurrentStatus(void);
 extern void SXDriveHandleRow(NSInteger row, UIViewController *host);
 extern void SXOpenPrivateUpdater(UIViewController *host);
+extern void SXProbeCheckUpdateNotice(void(^done)(NSString *notice));
+extern NSString *SXProbeOwnVersion(void);
 
 static NSMutableArray<NSDictionary *> *SXEntries;
 static dispatch_queue_t SXQueue;
@@ -93,13 +96,20 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
 }
 
 @interface SXProbePanel : UITableViewController
+@property(nonatomic,copy) NSString *updateNotice;
 @end
 
 @implementation SXProbePanel
 - (instancetype)init { return [super initWithStyle:UITableViewStyleInsetGrouped]; }
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"SX Probe";
+    self.title = @"SXP";
+    self.updateNotice = @"更新確認中…";
+    __weak typeof(self) weakSelf=self;
+    SXProbeCheckUpdateNotice(^(NSString *notice){
+        __strong typeof(weakSelf) self=weakSelf;
+        if(self){self.updateNotice=notice;[self.tableView reloadData];}
+    });
     if (SXEnabled && !SXRecordingRestored) {
         SXRecordingRestored = YES;
         SXRecord(@"recording-restored",@{@"enabled":@YES});
@@ -112,58 +122,42 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
 - (void)driveUpdated:(NSNotification *)note { [self.tableView reloadData]; }
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 3; }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section == 2 ? 6 : 3; }
-- (NSInteger)rowForPath:(NSIndexPath *)path { return path.section * 3 + path.row; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section==0 ? 2 : (section==1 ? 4 : 3); }
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {return @[@"情報",@"診断",@"連携・管理"][section];}
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
-    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
-    NSBundle *bundle = [NSBundle mainBundle];
-    NSInteger row = [self rowForPath:path];
-    if (row <= 2) {
-        if (row == 0) {
-            cell.textLabel.text = @"X バージョン";
-            cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ (%@)", [bundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?", [bundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"?"];
-        } else if (row == 1) {
-            cell.textLabel.text = @"クラス存在チェック";
-            NSUInteger count = 0;
-            const char *targets[] = {"TTAStatusBodyTextView", "T1StatusCell", "T1StandardStatusView", "T1StatusTableRowAdapter", "T1UserView", "T1UserViewLayoutParameters", "T1UserViewLayoutState", "T1ProfileUserInfoView", "T1ProfileHeaderView", "T1ProfileUserInfoViewController"};
-            for (NSUInteger i = 0; i < sizeof(targets)/sizeof(targets[0]); i++) if (objc_getClass(targets[i])) count++;
-            cell.detailTextLabel.text = [NSString stringWithFormat:@"%lu / %lu", (unsigned long)count, (unsigned long)(sizeof(targets)/sizeof(targets[0]))];
-        } else {
-            cell.textLabel.text = @"メタデータ記録";
-            UISwitch *toggle = [UISwitch new];
-            toggle.on = SXEnabled;
-            [toggle addTarget:self action:@selector(toggleRecording:) forControlEvents:UIControlEventValueChanged];
-            cell.accessoryView = toggle;
-        }
-    } else if (row == 3) {
-        cell.textLabel.text=SXDriveIsConnected()?@"接続を解除":@"Googleアカウントで接続";
-        cell.detailTextLabel.text=SXDriveIsConnected()?@"接続済み":@"未接続";
+    UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    NSBundle *bundle=NSBundle.mainBundle;
+    NSInteger s=path.section,r=path.row;
+    if(s==0 && r==0) {
+        cell.textLabel.text=@"X バージョン";
+        cell.detailTextLabel.text=[NSString stringWithFormat:@"%@ (%@)",[bundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]?:@"?",[bundle objectForInfoDictionaryKey:@"CFBundleVersion"]?:@"?"];
+    } else if(s==0 && r==1) {
+        cell.textLabel.text=@"SXP バージョン";
+        cell.detailTextLabel.text=[NSString stringWithFormat:@"%@  %@",SXProbeOwnVersion(),self.updateNotice?:@""];
+        cell.detailTextLabel.adjustsFontSizeToFitWidth=YES;
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if (row == 4) {
-        cell.textLabel.text=@"診断JSONをDriveへ送信";
-        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if (row == 5) {
-        cell.textLabel.text=@"現在の状態";
-        cell.detailTextLabel.text=SXDriveCurrentStatus();
-    } else if (row == 6) {
+    } else if(s==1 && r==0) {
+        cell.textLabel.text=@"メタデータ記録";
+        UISwitch *toggle=[UISwitch new];toggle.on=SXEnabled;
+        [toggle addTarget:self action:@selector(toggleRecording:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView=toggle;
+    } else if(s==1 && r==1) {
         cell.textLabel.text=@"クラスメソッド情報を記録";
-        cell.detailTextLabel.text=@"読み取り専用";
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if (row == 7) {
-        cell.textLabel.text=@"診断JSONを共有";
-        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if (row == 8) {
-        cell.textLabel.text=@"診断ログを消去";
-        cell.textLabel.textColor=UIColor.systemRedColor;
-    } else if (row == 9) {
+    } else if(s==1 && r==2) {
+        cell.textLabel.text=@"診断ログを消去";cell.textLabel.textColor=UIColor.systemRedColor;
+    } else if(s==1 && r==3) {
         cell.textLabel.text=@"記録イベント数";
         cell.detailTextLabel.text=[SXLogSummary()[@"count"] description];
-    } else if (row == 10) {
-        cell.textLabel.text=@"最新イベント";
-        cell.detailTextLabel.text=SXLogSummary()[@"last"];
-    } else if (row == 11) {
-        cell.textLabel.text=@"Probe更新（準備中）";
-        cell.detailTextLabel.text=@"GitHub認証・ビルド確認";
+    } else if(s==2 && r==0) {
+        cell.textLabel.text=@"Google Drive";
+        cell.detailTextLabel.text=SXDriveIsConnected()?@"接続済み":@"未接続";
+        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
+    } else if(s==2 && r==1) {
+        cell.textLabel.text=@"診断JSONをDriveへ送信";
+        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
+    } else if(s==2 && r==2) {
+        cell.textLabel.text=@"SXP更新";
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
     }
     return cell;
@@ -183,12 +177,17 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
     [tableView deselectRowAtIndexPath:path animated:YES];
-    NSInteger row = [self rowForPath:path];
-    if (row == 3 || row == 4) SXDriveHandleRow(row - 3,self);
-    if (row == 6) [self recordMethodMetadata];
-    if (row == 7) [self exportJSON];
-    if (row == 8) { SXClearEntries(); [self.tableView reloadData]; }
-    if (row == 11) SXOpenPrivateUpdater(self);
+    if(path.section==0 && path.row==1) SXOpenPrivateUpdater(self);
+    else if(path.section==1 && path.row==1) [self recordMethodMetadata];
+    else if(path.section==1 && path.row==2) {
+        UIAlertController *a=[UIAlertController alertControllerWithTitle:@"診断ログを消去？" message:@"記録済みイベントを削除するわ。" preferredStyle:UIAlertControllerStyleAlert];
+        [a addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
+        [a addAction:[UIAlertAction actionWithTitle:@"消去" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *x){ SXClearEntries();[self.tableView reloadData]; }]];
+        [self presentViewController:a animated:YES completion:nil];
+    }
+    else if(path.section==2 && path.row==0) SXDriveHandleRow(0,self);
+    else if(path.section==2 && path.row==1) SXDriveHandleRow(1,self);
+    else if(path.section==2 && path.row==2) SXOpenPrivateUpdater(self);
 }
 - (void)recordMethodMetadata {
  // Manual capture remains available even when metadata recording is disabled.
