@@ -38,6 +38,14 @@ static BOOL SXUpdateDeleteToken(void) {
     return rc == errSecSuccess || rc == errSecItemNotFound;
 }
 
+@interface SXNoCredentialRedirect : NSObject <NSURLSessionTaskDelegate>
+@end
+@implementation SXNoCredentialRedirect
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest * _Nullable))completionHandler {
+    completionHandler(nil);
+}
+@end
+
 @interface SXPrivateUpdater : UITableViewController
 @property(nonatomic,copy) NSString *statusText;
 @property(nonatomic,assign) BOOL busy;
@@ -122,7 +130,7 @@ static BOOL SXUpdateDeleteToken(void) {
     [r setValue:@"SCARLET-X-Probe-updater" forHTTPHeaderField:@"User-Agent"];
     // Prevent credentialed redirects to untrusted hosts.
     NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration ephemeralSessionConfiguration];
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:cfg delegate:nil delegateQueue:nil];
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:cfg delegate:[SXNoCredentialRedirect new] delegateQueue:nil];
     __weak typeof(self) weakSelf = self;
     [[session dataTaskWithRequest:r completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSInteger code = [(NSHTTPURLResponse *)response statusCode];
