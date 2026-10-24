@@ -158,6 +158,12 @@ static NSURLRequest *SXDriveRequest(NSString *url,NSString *method,NSString *tok
  self.statusText=message;[self.tableView reloadData];
  [[NSNotificationCenter defaultCenter] postNotificationName:@"SXDriveStateChanged" object:nil];
 }
+- (void)uploadStatus:(NSString *)message {
+ [self status:message];
+ [[NSNotificationCenter defaultCenter] postNotificationName:@"SXPOperationStatusChanged"
+                                                     object:nil
+                                                   userInfo:@{@"message":[@"Drive: " stringByAppendingString:message?:@"状態不明"]}];
+}
 - (void)tokenRequest:(NSDictionary *)fields finish:(SXDone)finish {
  NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://oauth2.googleapis.com/token"]];
  r.HTTPMethod=@"POST";[r setValue:@"application/x-www-form-urlencoded" forHTTPHeaderField:@"Content-Type"];r.HTTPBody=SXForm(fields);
@@ -206,14 +212,14 @@ static NSURLRequest *SXDriveRequest(NSString *url,NSString *method,NSString *tok
 - (void)uploadProbe {
  NSDictionary *payload=SXProbeDiagnosticPayload();
  NSData *data=payload?[NSJSONSerialization dataWithJSONObject:payload options:NSJSONWritingPrettyPrinted error:nil]:nil;
- if(!data){[self status:@"診断JSON作成に失敗"];return;}
- self.busy=YES;[self status:@"Google Driveへ接続中…"];
+ if(!data){[self uploadStatus:@"診断JSON作成に失敗"];return;}
+ self.busy=YES;[self uploadStatus:@"Google Driveへ接続中…"];
  [self withToken:^(NSString *token,NSError *error){
-  if(error){self.busy=NO;[self status:error.localizedDescription];return;}
+  if(error){self.busy=NO;[self uploadStatus:error.localizedDescription];return;}
   [self findFolder:@"ScarletX" parent:@"root" token:token finish:^(NSString *root,NSError *e){
-   if(e){self.busy=NO;[self status:e.localizedDescription];return;}
+   if(e){self.busy=NO;[self uploadStatus:e.localizedDescription];return;}
    [self findFolder:@"Probe" parent:root token:token finish:^(NSString *folder,NSError *e2){
-    if(e2){self.busy=NO;[self status:e2.localizedDescription];return;}
+    if(e2){self.busy=NO;[self uploadStatus:e2.localizedDescription];return;}
     [self sendJSON:data token:token folder:folder];
    }];
   }];
@@ -238,7 +244,7 @@ static NSURLRequest *SXDriveRequest(NSString *url,NSString *method,NSString *tok
  SXHTTP(r,^(NSDictionary *result,NSError *error){
   self.busy=NO;
   NSString *fid=[result[@"id"] isKindOfClass:NSString.class]?result[@"id"]:nil;
-  [self status:error?[NSString stringWithFormat:@"送信失敗: %@",error.localizedDescription]:fid.length?[NSString stringWithFormat:@"送信成功: ScarletX/Probe/%@",name]:@"送信応答にファイルIDなし"];
+  [self uploadStatus:error?[NSString stringWithFormat:@"送信失敗: %@",error.localizedDescription]:fid.length?[NSString stringWithFormat:@"送信成功: ScarletX/Probe/%@",name]:@"送信応答にファイルIDなし"];
  });
 }
 - (void)confirmDisconnect {
