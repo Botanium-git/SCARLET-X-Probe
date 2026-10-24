@@ -3,6 +3,7 @@
 extern BOOL SXDriveIsConnected(void);
 extern NSString *SXDriveCurrentStatus(void);
 extern void SXDriveHandleRow(NSInteger row, UIViewController *host);
+extern void SXOpenPrivateUpdater(UIViewController *host);
 
 static NSMutableArray<NSDictionary *> *SXEntries;
 static dispatch_queue_t SXQueue;
@@ -111,7 +112,7 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
 - (void)driveUpdated:(NSNotification *)note { [self.tableView reloadData]; }
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 3; }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section == 2 ? 5 : 3; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section == 2 ? 6 : 3; }
 - (NSInteger)rowForPath:(NSIndexPath *)path { return path.section * 3 + path.row; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
@@ -160,6 +161,10 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
     } else if (row == 10) {
         cell.textLabel.text=@"最新イベント";
         cell.detailTextLabel.text=SXLogSummary()[@"last"];
+    } else if (row == 11) {
+        cell.textLabel.text=@"Probe更新（準備中）";
+        cell.detailTextLabel.text=@"GitHub認証・ビルド確認";
+        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
     }
     return cell;
 }
@@ -183,6 +188,7 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
     if (row == 6) [self recordMethodMetadata];
     if (row == 7) [self exportJSON];
     if (row == 8) { SXClearEntries(); [self.tableView reloadData]; }
+    if (row == 11) SXOpenPrivateUpdater(self);
 }
 - (void)recordMethodMetadata {
  // Manual capture remains available even when metadata recording is disabled.
