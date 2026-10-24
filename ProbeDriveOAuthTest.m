@@ -70,7 +70,7 @@ static NSURLRequest *SXDriveRequest(NSString *url,NSString *method,NSString *tok
  return r;
 }
 
-@interface SXProbeOAuthTest : UITableViewController <ASWebAuthenticationPresentationContextProviding>
+@interface SXProbeOAuthTest : UITableViewController <ASWebAuthenticationPresentationContextProviding, NSURLSessionTaskDelegate>
 @property(nonatomic,strong) ASWebAuthenticationSession *auth;
 @property(nonatomic,copy) NSString *expectedState;
 @property(nonatomic,copy) NSString *statusText;
@@ -225,6 +225,13 @@ static NSURLRequest *SXDriveRequest(NSString *url,NSString *method,NSString *tok
   }];
  }];
 }
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didSendBodyData:(int64_t)sent totalBytesSent:(int64_t)total expectedTotalBytes:(int64_t)expected {
+ if(expected<=0 || total<0)return;
+ NSInteger pct=MIN(100,(NSInteger)((double)total*100.0/(double)expected));
+ dispatch_async(dispatch_get_main_queue(),^{
+  if(self.busy)[self uploadStatus:[NSString stringWithFormat:@"送信中: %ld%%",(long)pct]];
+ });
+}
 - (void)sendJSON:(NSData *)data token:(NSString *)token folder:(NSString *)folder {
  NSDateFormatter *f=[NSDateFormatter new];f.dateFormat=@"yyyy-MM-dd_HHmmss";
  NSString *name=[NSString stringWithFormat:@"SXProbe_%@.json",[f stringFromDate:NSDate.date]];
@@ -241,11 +248,22 @@ static NSURLRequest *SXDriveRequest(NSString *url,NSString *method,NSString *tok
  r.HTTPMethod=@"POST";[r setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
  [r setValue:[NSString stringWithFormat:@"multipart/related; boundary=%@",boundary] forHTTPHeaderField:@"Content-Type"];
  r.HTTPBody=body;
- SXHTTP(r,^(NSDictionary *result,NSError *error){
-  self.busy=NO;
+ [self uploadStatus:@"送信準備完了。アップロード開始…"];
+ NSURLSession *session=[NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration delegate:self delegateQueue:nil];
+ NSURLSessionUploadTask *task=[session uploadTaskWithRequest:r fromData:body completionHandler:^(NSData *responseData,NSURLResponse *response,NSError *error){
+  NSDictionary *result=[NSJSONSerialization JSONObjectWithData:responseData?:[NSData data] options:0 error:nil];
+  if(![result isKindOfClass:NSDictionary.class])result=@{};
+  NSInteger status=[response isKindOfClass:NSHTTPURLResponse.class]?((NSHTTPURLResponse *)response).statusCode:0;
+  if(!error && (status<200 || status>=300))
+   error=[NSError errorWithDomain:@"SXProbeDrive" code:status userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"HTTP %ld",(long)status]}];
   NSString *fid=[result[@"id"] isKindOfClass:NSString.class]?result[@"id"]:nil;
-  [self uploadStatus:error?[NSString stringWithFormat:@"送信失敗: %@",error.localizedDescription]:fid.length?[NSString stringWithFormat:@"送信成功: ScarletX/Probe/%@",name]:@"送信応答にファイルIDなし"];
- });
+  dispatch_async(dispatch_get_main_queue(),^{
+   self.busy=NO;
+   [self uploadStatus:error?[NSString stringWithFormat:@"送信失敗: %@",error.localizedDescription]:fid.length?[NSString stringWithFormat:@"送信成功: ScarletX/Probe/%@",name]:@"送信応答にファイルIDなし"];
+  });
+  [session finishTasksAndInvalidate];
+ }];
+ [task resume];
 }
 - (void)confirmDisconnect {
  UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Google Drive接続を解除" message:@"この端末の認証情報だけを削除します。Drive上のファイルは残ります。" preferredStyle:UIAlertControllerStyleAlert];
