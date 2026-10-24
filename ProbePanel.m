@@ -220,6 +220,40 @@ static void SXObservedRichUpdate(id target,SEL selector,id rich,id font,id color
     SXCaptureProfileFont(target,font,@"rich-update");
     if(SXOriginalRichUpdate)SXOriginalRichUpdate(target,selector,rich,font,color,activeFont,alignment,breakMode);
 }
+// Diagnose dispatch ownership and IMP replacement without recording raw addresses.
+static BOOL SXOwnsSelector(Class cls,SEL selector) {
+    unsigned int count=0;Method *methods=class_copyMethodList(cls,&count);BOOL found=NO;
+    for(unsigned int i=0;i<count;i++)if(method_getName(methods[i])==selector){found=YES;break;}
+    if(methods)free(methods);return found;
+}
+static NSString *SXIMPImageName(IMP imp) {
+    if(!imp)return @"missing";
+    Dl_info details={0};
+    if(!dladdr((const void *)imp,&details) || !details.dli_fname)return @"unknown";
+    return [[NSString stringWithUTF8String:details.dli_fname] lastPathComponent]?:@"unknown";
+}
+static NSDictionary *SXDispatchEntry(Class cls,SEL selector,IMP observer,IMP original) {
+    Method method=cls?class_getInstanceMethod(cls,selector):NULL;
+    IMP actual=method?method_getImplementation(method):NULL;
+    NSMutableArray *owners=[NSMutableArray array];
+    for(Class current=cls;current && owners.count<20;current=class_getSuperclass(current)) {
+        if(SXOwnsSelector(current,selector))[owners addObject:NSStringFromClass(current)?:@"unknown"];
+    }
+    return @{@"selector":NSStringFromSelector(selector),@"targetClass":cls?NSStringFromClass(cls):@"missing",
+             @"ownerClasses":owners,@"exists":@(method!=NULL),
+             @"currentIsObserver":@(actual!=NULL && actual==observer),
+             @"currentIsOriginal":@(actual!=NULL && actual==original),
+             @"currentImage":SXIMPImageName(actual),@"originalImage":SXIMPImageName(original)};
+}
+static void SXRecordFontDispatchStatus(void) {
+    Class cls=objc_getClass("TFNAttributedTextView");
+    SEL textSel=NSSelectorFromString(@"ocf_updateForText:activeRanges:font:color:activeRangesFont:textAlignment:lineBreakMode:");
+    SEL richSel=NSSelectorFromString(@"ocf_updateForExpandedRichText:font:color:activeRangesFont:textAlignment:lineBreakMode:");
+    SXRecord(@"profile-font-dispatch-status",@{@"installed":@(SXFontHooksInstalled),
+      @"text":SXDispatchEntry(cls,textSel,(IMP)SXObservedTextUpdate,(IMP)SXOriginalTextUpdate),
+      @"rich":SXDispatchEntry(cls,richSel,(IMP)SXObservedRichUpdate,(IMP)SXOriginalRichUpdate),
+      @"textCaptured":@NO});
+}
 static void SXInstallProfileFontObservers(void) {
     if(SXFontHooksInstalled)return;
     Class cls=objc_getClass("TFNAttributedTextView");
@@ -241,6 +275,7 @@ static void SXInstallProfileFontObservers(void) {
     class_replaceMethod(cls,richSel,(IMP)SXObservedRichUpdate,richABI);
     SXFontHooksInstalled=YES;
     SXRecord(@"profile-font-observer-installed",@{@"abiVerified":@YES,@"textCaptured":@NO});
+    SXRecordFontDispatchStatus();
 }
 
 // Explicit, read-only snapshot. Never exports text, account IDs or view descriptions.
@@ -423,6 +458,7 @@ static NSDictionary *SXBioSnapshot(void) {
 }
 - (void)captureProfileLayout {
     if(SXFontHooksInstalled)SXFlushFontCounters();
+    SXRecordFontDispatchStatus();
     NSDictionary *snapshot=SXBioSnapshot();
     SXRecord(@"profile-bio-view-snapshot",snapshot);
     [self.tableView reloadData];
