@@ -139,6 +139,31 @@ static NSArray *SXTextViewMetricSelectorNames(Class cls) {
     return selected;
 }
 
+// Inspect Objective-C ABI metadata before considering an invasive font-argument hook.
+static NSArray *SXFontUpdateABIMetadata(Class cls) {
+    NSArray *wanted=@[
+      @"ocf_updateForText:activeRanges:font:color:activeRangesFont:textAlignment:lineBreakMode:",
+      @"ocf_updateForExpandedRichText:font:color:activeRangesFont:textAlignment:lineBreakMode:",
+      @"_ocf_updateForText:activeRanges:attributedStringFactory:"
+    ];
+    NSMutableArray *result=[NSMutableArray array];
+    for(NSString *selectorName in wanted) {
+        SEL selector=NSSelectorFromString(selectorName);
+        Method method=class_getInstanceMethod(cls,selector);
+        if(!method)continue;
+        const char *raw=method_getTypeEncoding(method);
+        NSMethodSignature *signature=raw?[NSMethodSignature signatureWithObjCTypes:raw]:nil;
+        NSMutableArray *argumentTypes=[NSMutableArray array];
+        for(NSUInteger i=0;signature && i<signature.numberOfArguments;i++) {
+            const char *type=[signature getArgumentTypeAtIndex:i];
+            [argumentTypes addObject:type?[NSString stringWithUTF8String:type]:@"unknown"];
+        }
+        [result addObject:@{@"selector":selectorName,@"typeEncoding":raw?[NSString stringWithUTF8String:raw]:@"",
+                             @"argumentTypes":argumentTypes,@"returns":signature?@(signature.methodReturnLength):@0}];
+    }
+    return result;
+}
+
 // Explicit, read-only snapshot. Never exports text, account IDs or view descriptions.
 static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *visited) {
     if(!node || *visited>=1500 || samples.count>=12)return;
@@ -167,7 +192,10 @@ static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *vi
             else if([v isKindOfClass:UITextView.class])rich=((UITextView *)v).attributedText;
             if(rich.length)entry[@"typography"]=SXTypographyMetrics(rich);
             if([kind isEqualToString:@"TFNAttributedTextView"])
+                {
                 entry[@"availableMetricSelectors"]=SXTextViewMetricSelectorNames(v.class);
+                entry[@"fontUpdateABI"]=SXFontUpdateABIMetadata(v.class);
+            }
             if(v==node || font || [kind localizedCaseInsensitiveContainsString:@"bio"] ||
                [kind localizedCaseInsensitiveContainsString:@"attributedtext"]) [children addObject:entry];
             for(UIView *child in v.subviews)if(pending.count<300)[pending addObject:child];
