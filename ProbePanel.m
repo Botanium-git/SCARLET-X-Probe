@@ -125,7 +125,7 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
 - (void)driveUpdated:(NSNotification *)note { [self.tableView reloadData]; }
 - (void)closePanel { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 3; }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section==0 ? 2 : (section==1 ? 4 : 4); }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section==0 ? 2 : (section==1 ? 4 : 3); }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {return @[@"情報",@"診断",@"連携・管理"][section];}
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
@@ -153,17 +153,13 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
         cell.textLabel.text=@"記録イベント数";
         cell.detailTextLabel.text=[SXLogSummary()[@"count"] description];
     } else if(s==2 && r==0) {
-        cell.textLabel.text=@"Google Drive";
-        cell.detailTextLabel.text=SXDriveIsConnected()?@"接続済み":@"未接続";
-        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if(s==2 && r==1) {
         cell.textLabel.text=@"診断JSONをDriveへ送信";
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if(s==2 && r==2) {
+    } else if(s==2 && r==1) {
         cell.textLabel.text=@"SXP更新";
         cell.detailTextLabel.text=@"debを取得・共有";
         cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    } else if(s==2 && r==3) {
+    } else if(s==2 && r==2) {
         cell.textLabel.text=@"現在の状態";
         cell.detailTextLabel.text=self.downloadStatus;
         cell.detailTextLabel.adjustsFontSizeToFitWidth=YES;
@@ -193,9 +189,8 @@ static void SXCollectAutomaticMethodMetadataIfEnabled(void) {
         [a addAction:[UIAlertAction actionWithTitle:@"消去" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *x){ SXClearEntries();[self.tableView reloadData]; }]];
         [self presentViewController:a animated:YES completion:nil];
     }
-    else if(path.section==2 && path.row==0) SXDriveHandleRow(0,self);
-    else if(path.section==2 && path.row==1) SXDriveHandleRow(1,self);
-    else if(path.section==2 && path.row==2) {
+    else if(path.section==2 && path.row==0) SXDriveHandleRow(1,self);
+    else if(path.section==2 && path.row==1) {
         self.downloadStatus=@"取得中…";[self.tableView reloadData];
         __weak typeof(self) weakSelf=self;
         SXStartProbeDownload(self, ^(NSString *status){
