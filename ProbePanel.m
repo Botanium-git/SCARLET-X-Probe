@@ -698,6 +698,47 @@ static NSDictionary *SXBioRenderedMetrics(void) {
                             largest=fmax(largest,w);
                         }
                     }
+                    // OX-012 height verification: report native Core Text baseline
+                    // geometry without altering the model or its CTFrame.
+                    if(count>0 && count<=100) {
+                        CGPoint origins[100]={0};
+                        CTFrameGetLineOrigins(ctFrame,CFRangeMake(0,count),origins);
+                        NSMutableArray *lineGeometry=[NSMutableArray arrayWithCapacity:(NSUInteger)count];
+                        for(CFIndex idx=0;idx<count;idx++) {
+                            CTLineRef line=(CTLineRef)CFArrayGetValueAtIndex(lines,idx);
+                            CGFloat ascent=0,descent=0,leading=0;
+                            double lineWidth=CTLineGetTypographicBounds(line,&ascent,&descent,&leading);
+                            if(isfinite(lineWidth)&&isfinite(ascent)&&isfinite(descent)&&isfinite(leading)&&
+                               isfinite(origins[idx].x)&&isfinite(origins[idx].y)) {
+                                CFRange range=CTLineGetStringRange(line);
+                                [lineGeometry addObject:@{@"index":@(idx),@"origin":@[@(origins[idx].x),@(origins[idx].y)],
+                                  @"ascent":@(ascent),@"descent":@(descent),@"leading":@(leading),
+                                  @"typographicWidth":@(lineWidth),
+                                  @"stringRange":@{@"location":@(range.location),@"length":@(range.length)}}];
+                            }
+                        }
+                        layout[@"coreTextLineGeometry"]=lineGeometry;
+                        CGPathRef path=CTFrameGetPath(ctFrame);
+                        CGRect rect=CGRectZero;
+                        BOOL rectPath=path && CGPathIsRect(path,&rect);
+                        layout[@"coreTextPathIsRect"]=@(rectPath);
+                        if(rectPath && isfinite(CGRectGetMaxY(rect))) {
+                            layout[@"coreTextPathRect"]=@[@(rect.origin.x),@(rect.origin.y),@(rect.size.width),@(rect.size.height)];
+                            if([lineGeometry count]==(NSUInteger)count) {
+                                NSDictionary *last=lineGeometry.lastObject;
+                                double originY=[last[@"origin"][1] doubleValue];
+                                double asc=[last[@"ascent"] doubleValue];
+                                double desc=[last[@"descent"] doubleValue];
+                                float base=fmaxf((float)(CGRectGetMaxY(rect)-originY),(float)asc);
+                                float raw=(float)((double)base+desc+3.0);
+                                if(isfinite(raw)) {
+                                    layout[@"coreTextHeightOX012Candidate"]=@(ceilf(raw));
+                                    layout[@"coreTextHeightOX012Raw"]=@(raw);
+                                    layout[@"coreTextHeightOX012LastLineIndex"]=@(count-1);
+                                }
+                            }
+                        }
+                    }
                     layout[@"coreTextLineWidths"]=widths;
                     layout[@"coreTextLineCount"]=@(count);
                     layout[@"coreTextMaxLineWidthCeil"]=@(ceil(largest));
