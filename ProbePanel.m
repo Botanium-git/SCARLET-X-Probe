@@ -248,6 +248,20 @@ static NSDictionary *SXDispatchEntry(Class cls,SEL selector,IMP observer,IMP ori
 }
 // Read-only ABI preflight for the profile owner's own bio configuration path.
 // No method replacement, argument invocation, or text extraction.
+// ABI-only check for the bio font getter found in the older X binary.
+static void SXRecordBioFontCandidates(void) {
+    NSMutableArray *hits=[NSMutableArray array];
+    for(NSString *name in @[@"T1ProfileUserInfoView",@"T1UserView",@"TFNAttributedTextView"]) {
+        Class cls=objc_getClass(name.UTF8String);
+        SEL selector=NSSelectorFromString(@"bioFont");
+        Method method=cls?class_getInstanceMethod(cls,selector):NULL;
+        const char *types=method?method_getTypeEncoding(method):NULL;
+        [hits addObject:@{@"class":name,@"exists":@(method!=NULL),
+          @"typeEncoding":types?[NSString stringWithUTF8String:types]:@"",
+          @"implementationImage":method?SXIMPImageName(method_getImplementation(method)):@"missing"}];
+    }
+    SXRecord(@"profile-bio-font-candidates",@{@"methods":hits,@"valuesRead":@NO});
+}
 static void SXRecordProfileBioSetterABI(void) {
     Class cls=objc_getClass("T1ProfileUserInfoView");
     SEL sel=NSSelectorFromString(@"_t1_setBioLabel:withText:entities:isUTF16Entities:");
@@ -612,6 +626,7 @@ static NSDictionary *SXBioSnapshot(void) {
     if(SXFontHooksInstalled)SXFlushFontCounters();
     SXRecordFontDispatchStatus();
     SXRecordProfileBioSetterABI();
+    SXRecordBioFontCandidates();
     SXRecord(@"profile-bio-setter-counters",@{@"installed":@(SXBioSetterInstalled),@"calls":@(SXBioSetterCalls),@"textCaptured":@NO});
     NSDictionary *snapshot=SXBioSnapshot();
     SXRecord(@"profile-bio-view-snapshot",snapshot);
