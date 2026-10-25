@@ -698,7 +698,7 @@ static NSDictionary *SXBioRenderedMetrics(void) {
                     }
                 }
             }
-            double preferred=((UIView *)label).respondsToSelector(NSSelectorFromString(@"preferredMaxLayoutWidth"))?
+            double preferred=[label respondsToSelector:NSSelectorFromString(@"preferredMaxLayoutWidth")]?
                 ((double(*)(id,SEL))objc_msgSend)(label,NSSelectorFromString(@"preferredMaxLayoutWidth")):NAN;
             if(isfinite(preferred))layout[@"preferredMaxLayoutWidth"]=@(preferred);
             for(NSString *name in @[@"_contentTopPadding",@"_contentBottomPadding"]) {
