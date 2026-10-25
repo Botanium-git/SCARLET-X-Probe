@@ -291,6 +291,42 @@ static void SXRecordProfileTypographyStructure(void) {
     }
     SXRecord(@"profile-typography-structure",@{@"methods":methods,@"ivars":members,@"valuesRead":@NO});
 }
+// Discover private text view storage signatures without invoking getters or reading ivar values.
+static void SXRecordBioTextViewStructure(void) {
+    Class cls=objc_getClass("TFNAttributedTextView");
+    NSMutableArray *members=[NSMutableArray array];
+    NSMutableArray *properties=[NSMutableArray array];
+    for(Class owner=cls;owner && members.count<75;owner=class_getSuperclass(owner)) {
+        unsigned int count=0;
+        Ivar *ivars=class_copyIvarList(owner,&count);
+        for(unsigned int i=0;ivars && i<count && members.count<75;i++) {
+            const char *raw=ivar_getName(ivars[i]);
+            NSString *name=raw?[NSString stringWithUTF8String:raw]:@"";
+            NSString *lower=name.lowercaseString;
+            if([lower containsString:@"font"]||[lower containsString:@"text"]||[lower containsString:@"attribut"]||[lower containsString:@"layout"]||[lower containsString:@"render"]||[lower containsString:@"style"]||[lower containsString:@"paragraph"]) {
+                const char *type=ivar_getTypeEncoding(ivars[i]);
+                [members addObject:@{@"owner":NSStringFromClass(owner),@"name":name,
+                  @"type":type?[NSString stringWithUTF8String:type]:@""}];
+            }
+        }
+        if(ivars)free(ivars);
+        count=0;
+        objc_property_t *props=class_copyPropertyList(owner,&count);
+        for(unsigned int i=0;props && i<count && properties.count<75;i++) {
+            const char *raw=property_getName(props[i]);
+            NSString *name=raw?[NSString stringWithUTF8String:raw]:@"";
+            NSString *lower=name.lowercaseString;
+            if([lower containsString:@"font"]||[lower containsString:@"text"]||[lower containsString:@"attribut"]||[lower containsString:@"layout"]||[lower containsString:@"render"]||[lower containsString:@"style"]||[lower containsString:@"paragraph"]) {
+                const char *type=property_getAttributes(props[i]);
+                [properties addObject:@{@"owner":NSStringFromClass(owner),@"name":name,
+                  @"attributes":type?[NSString stringWithUTF8String:type]:@""}];
+            }
+        }
+        if(props)free(props);
+    }
+    SXRecord(@"profile-bio-textview-structure",@{@"class":cls?NSStringFromClass(cls):@"missing",
+      @"ivars":members,@"properties":properties,@"valuesRead":@NO});
+}
 static void SXRecordProfileBioSetterABI(void) {
     Class cls=objc_getClass("T1ProfileUserInfoView");
     SEL sel=NSSelectorFromString(@"_t1_setBioLabel:withText:entities:isUTF16Entities:");
@@ -657,6 +693,7 @@ static NSDictionary *SXBioSnapshot(void) {
     SXRecordProfileBioSetterABI();
     SXRecordBioFontCandidates();
     SXRecordProfileTypographyStructure();
+    SXRecordBioTextViewStructure();
     SXRecord(@"profile-bio-setter-counters",@{@"installed":@(SXBioSetterInstalled),@"calls":@(SXBioSetterCalls),@"textCaptured":@NO});
     NSDictionary *snapshot=SXBioSnapshot();
     SXRecord(@"profile-bio-view-snapshot",snapshot);
