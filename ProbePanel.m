@@ -687,7 +687,7 @@ static NSDictionary *SXBioRenderedMetrics(void) {
             }
             // Compare caller-requested Core Text bounds with the measured output.
             Ivar requestedIvar=class_getInstanceVariable(modelClass,"_requestedSize");
-            if(requestedIvar && strcmp(ivar_getTypeEncoding(requestedIvar),@encode(CGSize))==0) {
+            if(requestedIvar && ivar_getTypeEncoding(requestedIvar) && ivar_getTypeEncoding(requestedIvar)[0]=='{') {
                 CGSize requested=CGSizeZero;
                 memcpy(&requested,(const char *)(__bridge const void *)model+ivar_getOffset(requestedIvar),sizeof(requested));
                 if(isfinite(requested.width)&&isfinite(requested.height)) {
