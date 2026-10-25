@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import <CoreText/CoreText.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <dlfcn.h>
@@ -676,6 +677,30 @@ static NSDictionary *SXBioRenderedMetrics(void) {
                     }
                     layout[@"lineCount"]=@([(NSArray *)ranges count]);
                     layout[@"lineRanges"]=lineLengths;
+                }
+            }
+            // Independently measure the same CTFrame line widths used by the
+            // suspected X 12.25 sizing function. Read-only diagnostic.
+            SEL frameSEL=NSSelectorFromString(@"coreTextFrame");
+            Method frameMethod=class_getInstanceMethod(modelClass,frameSEL);
+            if(frameMethod && strncmp(method_getTypeEncoding(frameMethod),"^{__CTFrame=}",12)==0) {
+                CTFrameRef ctFrame=((CTFrameRef(*)(id,SEL))objc_msgSend)(model,frameSEL);
+                if(ctFrame) {
+                    CFArrayRef lines=CTFrameGetLines(ctFrame);
+                    CFIndex count=lines?CFArrayGetCount(lines):0;
+                    NSMutableArray *widths=[NSMutableArray array];
+                    double largest=0;
+                    for(CFIndex idx=0;idx<count && idx<100;idx++) {
+                        CTLineRef line=(CTLineRef)CFArrayGetValueAtIndex(lines,idx);
+                        double w=CTLineGetTypographicBounds(line,NULL,NULL,NULL);
+                        if(isfinite(w)&&w>=0) {
+                            [widths addObject:@(w)];
+                            largest=fmax(largest,w);
+                        }
+                    }
+                    layout[@"coreTextLineWidths"]=widths;
+                    layout[@"coreTextLineCount"]=@(count);
+                    layout[@"coreTextMaxLineWidthCeil"]=@(ceil(largest));
                 }
             }
             Ivar actualIvar=class_getInstanceVariable(modelClass,"_actualSize");
