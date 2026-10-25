@@ -3,6 +3,7 @@
 #import <objc/message.h>
 #import <dlfcn.h>
 #include <string.h>
+#include <math.h>
 extern BOOL SXDriveIsConnected(void);
 extern NSString *SXDriveCurrentStatus(void);
 extern void SXDriveHandleRow(NSInteger row, UIViewController *host);
