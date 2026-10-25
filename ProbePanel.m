@@ -564,6 +564,49 @@ static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *vi
 }
 // Manual, main-thread-only capture of typography from the actual profile bio view.
 // Never export the user's bio text or attributed-string contents.
+// Read-only font decision context; this enumerates possible providers, not a proven call graph.
+static NSDictionary *SXBioFontDecisionContext(void) {
+    NSMutableArray *classes=[NSMutableArray array];
+    for(NSString *className in @[@"T1ProfileUserInfoView",@"T1ProfileHeaderView",@"TFNAttributedTextView",@"TFNLayoutMetrics"]) {
+        Class cls=objc_getClass(className.UTF8String);
+        NSMutableArray *methods=[NSMutableArray array];
+        if(cls) {
+            unsigned int count=0;
+            Method *items=class_copyMethodList(cls,&count);
+            for(unsigned int i=0;items&&i<count;i++) {
+                SEL sel=method_getName(items[i]);
+                NSString *name=NSStringFromSelector(sel);
+                NSString *lower=name.lowercaseString;
+                if([lower containsString:@"font"]||[lower containsString:@"textsize"]||
+                   [lower containsString:@"contentsize"]||[lower containsString:@"layoutmetrics"]) {
+                    const char *encoding=method_getTypeEncoding(items[i]);
+                    Dl_info info={0};
+                    dladdr((void *)method_getImplementation(items[i]),&info);
+                    NSString *path=info.dli_fname?[NSString stringWithUTF8String:info.dli_fname]:@"";
+                    [methods addObject:@{@"selector":name,@"typeEncoding":encoding?[NSString stringWithUTF8String:encoding]:@"",
+                                         @"implementationImage":path.lastPathComponent?:@""}];
+                }
+            }
+            if(items)free(items);
+        }
+        [classes addObject:@{@"class":className,@"exists":@(cls!=Nil),@"methods":methods}];
+    }
+    UIScreen *screen=UIScreen.mainScreen;
+    UIWindow *window=nil;
+    for(UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if(![scene isKindOfClass:UIWindowScene.class]||scene.activationState!=UISceneActivationStateForegroundActive)continue;
+        for(UIWindow *w in ((UIWindowScene *)scene).windows)if(!w.hidden){window=w;break;}
+        if(window)break;
+    }
+    CGSize screenSize=screen.bounds.size;
+    CGSize windowSize=window?window.bounds.size:CGSizeZero;
+    NSString *category=window.traitCollection.preferredContentSizeCategory?:@"";
+    return @{@"classes":classes,@"screenPoints":@[@(screenSize.width),@(screenSize.height)],
+             @"windowPoints":@[@(windowSize.width),@(windowSize.height)],
+             @"displayScale":@(screen.scale),@"contentSizeCategory":category,
+             @"windowHorizontalSizeClass":@(window.traitCollection.horizontalSizeClass),
+             @"textCaptured":@NO};
+}
 static NSDictionary *SXBioRenderedMetrics(void) {
     if(![NSThread isMainThread])return @{@"status":@"main-thread-required"};
     Class profileClass=objc_getClass("T1ProfileUserInfoView");
@@ -838,6 +881,7 @@ static NSDictionary *SXBioSnapshot(void) {
     SXRecordProfileTypographyStructure();
     SXRecordBioTextViewStructure();
     SXRecordBioModelRendererStructure();
+    SXRecord(@"profile-bio-font-decision-context",SXBioFontDecisionContext());
     SXRecord(@"profile-bio-rendered-metrics",SXBioRenderedMetrics());
     SXRecord(@"profile-bio-setter-counters",@{@"installed":@(SXBioSetterInstalled),@"calls":@(SXBioSetterCalls),@"textCaptured":@NO});
     NSDictionary *snapshot=SXBioSnapshot();
