@@ -685,6 +685,22 @@ static NSDictionary *SXBioRenderedMetrics(void) {
                 if(isfinite(size.width)&&isfinite(size.height)&&size.width>=0&&size.height>=0)
                     layout[@"actualSize"]=@[@(size.width),@(size.height)];
             }
+            // Compare caller-requested Core Text bounds with the measured output.
+            Ivar requestedIvar=class_getInstanceVariable(modelClass,"_requestedSize");
+            if(requestedIvar && strcmp(ivar_getTypeEncoding(requestedIvar),@encode(CGSize))==0) {
+                CGSize requested=CGSizeZero;
+                memcpy(&requested,(const char *)(__bridge const void *)model+ivar_getOffset(requestedIvar),sizeof(requested));
+                if(isfinite(requested.width)&&isfinite(requested.height)) {
+                    layout[@"requestedSize"]=@[@(requested.width),@(requested.height)];
+                    if(layout[@"actualSize"]) {
+                        NSArray *actual=layout[@"actualSize"];
+                        layout[@"requestedMinusActualWidth"]=@(requested.width-[actual[0] doubleValue]);
+                    }
+                }
+            }
+            double preferred=((UIView *)label).respondsToSelector(NSSelectorFromString(@"preferredMaxLayoutWidth"))?
+                ((double(*)(id,SEL))objc_msgSend)(label,NSSelectorFromString(@"preferredMaxLayoutWidth")):NAN;
+            if(isfinite(preferred))layout[@"preferredMaxLayoutWidth"]=@(preferred);
             for(NSString *name in @[@"_contentTopPadding",@"_contentBottomPadding"]) {
                 Ivar paddingIvar=class_getInstanceVariable(modelClass,name.UTF8String);
                 if(paddingIvar && strcmp(ivar_getTypeEncoding(paddingIvar),"d")==0) {
