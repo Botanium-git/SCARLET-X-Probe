@@ -617,10 +617,42 @@ static NSDictionary *SXBioRenderedMetrics(void) {
                     [styles addObject:one];
                 }];
             }
+            NSMutableDictionary *layout=[NSMutableDictionary dictionary];
+            Ivar rangesIvar=class_getInstanceVariable(modelClass,"_lineRanges");
+            if(rangesIvar && strcmp(ivar_getTypeEncoding(rangesIvar),"@\"NSArray\"")==0) {
+                id ranges=object_getIvar(model,rangesIvar);
+                if([ranges isKindOfClass:NSArray.class]) {
+                    NSMutableArray *lineLengths=[NSMutableArray array];
+                    for(id item in (NSArray *)ranges) {
+                        if(lineLengths.count>=40)break;
+                        if([item isKindOfClass:NSValue.class] && strcmp([(NSValue *)item objCType],@encode(NSRange))==0) {
+                            NSRange line=[(NSValue *)item rangeValue];
+                            [lineLengths addObject:@{@"location":@(line.location),@"length":@(line.length)}];
+                        }
+                    }
+                    layout[@"lineCount"]=@([(NSArray *)ranges count]);
+                    layout[@"lineRanges"]=lineLengths;
+                }
+            }
+            Ivar actualIvar=class_getInstanceVariable(modelClass,"_actualSize");
+            if(actualIvar && ivar_getTypeEncoding(actualIvar)[0]=='{') {
+                CGSize size=CGSizeZero;
+                memcpy(&size,(const char *)(__bridge const void *)model+ivar_getOffset(actualIvar),sizeof(size));
+                if(isfinite(size.width)&&isfinite(size.height)&&size.width>=0&&size.height>=0)
+                    layout[@"actualSize"]=@[@(size.width),@(size.height)];
+            }
+            for(NSString *name in @[@"_contentTopPadding",@"_contentBottomPadding"]) {
+                Ivar paddingIvar=class_getInstanceVariable(modelClass,name.UTF8String);
+                if(paddingIvar && strcmp(ivar_getTypeEncoding(paddingIvar),"d")==0) {
+                    double value=0;
+                    memcpy(&value,(const char *)(__bridge const void *)model+ivar_getOffset(paddingIvar),sizeof(value));
+                    if(isfinite(value))layout[[name substringFromIndex:1]]=@(value);
+                }
+            }
             CGRect bioFrame=((UIView *)label).frame;
             return @{@"status":@"captured",@"textLength":@(a.length),
                      @"bioFrame":@[@(bioFrame.origin.x),@(bioFrame.origin.y),@(bioFrame.size.width),@(bioFrame.size.height)],
-                     @"styleRuns":styles,@"textCaptured":@NO};
+                     @"styleRuns":styles,@"layoutMetrics":layout,@"textCaptured":@NO};
         }
         for(UIView *child in v.subviews)if(stack.count<2000)[stack addObject:child];
     }
