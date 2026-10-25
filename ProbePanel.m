@@ -561,6 +561,70 @@ static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *vi
     }
     for(UIView *child in node.subviews)SXScanBioViews(child,samples,visited);
 }
+// Manual, main-thread-only capture of typography from the actual profile bio view.
+// Never export the user's bio text or attributed-string contents.
+static NSDictionary *SXBioRenderedMetrics(void) {
+    if(![NSThread isMainThread])return @{@"status":@"main-thread-required"};
+    Class profileClass=objc_getClass("T1ProfileUserInfoView");
+    Class textClass=objc_getClass("TFNAttributedTextView");
+    Class modelClass=objc_getClass("TFNAttributedTextModel");
+    Ivar bioIvar=profileClass?class_getInstanceVariable(profileClass,"_bioLabel"):NULL;
+    Ivar modelIvar=textClass?class_getInstanceVariable(textClass,"_textModel"):NULL;
+    if(!bioIvar||!modelIvar||!modelClass)return @{@"status":@"missing-required-class-or-ivar"};
+    SEL getRendered=NSSelectorFromString(@"renderedAttributedString");
+    Method renderedMethod=class_getInstanceMethod(modelClass,getRendered);
+    if(!renderedMethod||strcmp(method_getTypeEncoding(renderedMethod),"@16@0:8")!=0)
+        return @{@"status":@"rendered-getter-abi-mismatch"};
+    NSMutableArray *stack=[NSMutableArray array];
+    for(UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if(![scene isKindOfClass:UIWindowScene.class]||scene.activationState!=UISceneActivationStateForegroundActive)continue;
+        for(UIWindow *w in ((UIWindowScene *)scene).windows)if(!w.hidden)[stack addObject:w];
+    }
+    NSUInteger visited=0;
+    while(stack.count&&visited++<1500) {
+        UIView *v=stack.lastObject;[stack removeLastObject];
+        if([v isKindOfClass:profileClass]&&v.window&&!v.hidden) {
+            id label=object_getIvar(v,bioIvar);
+            if(!label||![label isKindOfClass:textClass])continue;
+            id model=object_getIvar(label,modelIvar);
+            if(!model||![model isKindOfClass:modelClass])return @{@"status":@"model-unavailable"};
+            id value=((id(*)(id,SEL))objc_msgSend)(model,getRendered);
+            if(![value isKindOfClass:NSAttributedString.class])return @{@"status":@"rendered-string-unavailable"};
+            NSAttributedString *a=(NSAttributedString *)value;
+            NSMutableArray *styles=[NSMutableArray array];
+            if(a.length) {
+                [a enumerateAttributesInRange:NSMakeRange(0,a.length) options:0 usingBlock:^(NSDictionary *attrs,NSRange range,BOOL *stop) {
+                    if(styles.count>=12){*stop=YES;return;}
+                    id font=attrs[NSFontAttributeName], paragraph=attrs[NSParagraphStyleAttributeName];
+                    NSMutableDictionary *one=[NSMutableDictionary dictionary];
+                    one[@"rangeLength"]=@(range.length);
+                    if([font isKindOfClass:UIFont.class]) {
+                        UIFont *f=(UIFont *)font;
+                        one[@"fontName"]=f.fontName?:@"";
+                        one[@"pointSize"]=@(f.pointSize);
+                        one[@"lineHeight"]=@(f.lineHeight);
+                    }
+                    if([paragraph isKindOfClass:NSParagraphStyle.class]) {
+                        NSParagraphStyle *p=(NSParagraphStyle *)paragraph;
+                        one[@"lineSpacing"]=@(p.lineSpacing);
+                        one[@"paragraphSpacing"]=@(p.paragraphSpacing);
+                        one[@"minimumLineHeight"]=@(p.minimumLineHeight);
+                        one[@"maximumLineHeight"]=@(p.maximumLineHeight);
+                        one[@"lineHeightMultiple"]=@(p.lineHeightMultiple);
+                        one[@"alignment"]=@(p.alignment);
+                        one[@"lineBreakMode"]=@(p.lineBreakMode);
+                    }
+                    [styles addObject:one];
+                }];
+            }
+            return @{@"status":@"captured",@"textLength":@(a.length),
+                     @"bioFrame":@[@(label.frame.origin.x),@(label.frame.origin.y),@(label.frame.size.width),@(label.frame.size.height)],
+                     @"styleRuns":styles,@"textCaptured":@NO};
+        }
+        for(UIView *child in v.subviews)if(stack.count<2000)[stack addObject:child];
+    }
+    return @{@"status":@"profile-view-not-found"};
+}
 static NSDictionary *SXBioSnapshot(void) {
     if (![NSThread isMainThread]) return @{@"profileViewCount":@0,@"visitedViewCount":@0,@"samples":@[],@"error":@"main-thread-required",@"noTextCollected":@YES};
     NSMutableArray *samples=[NSMutableArray array];
@@ -740,6 +804,7 @@ static NSDictionary *SXBioSnapshot(void) {
     SXRecordProfileTypographyStructure();
     SXRecordBioTextViewStructure();
     SXRecordBioModelRendererStructure();
+    SXRecord(@"profile-bio-rendered-metrics",SXBioRenderedMetrics());
     SXRecord(@"profile-bio-setter-counters",@{@"installed":@(SXBioSetterInstalled),@"calls":@(SXBioSetterCalls),@"textCaptured":@NO});
     NSDictionary *snapshot=SXBioSnapshot();
     SXRecord(@"profile-bio-view-snapshot",snapshot);
