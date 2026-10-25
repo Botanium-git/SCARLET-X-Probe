@@ -97,7 +97,7 @@ static NSData *SXExtractSingleDeb(NSData *zip) {
 
 // Installed version is generated at package build time for this known Probe revision.
 // Never use the official X application's CFBundle version as the Probe version.
-NSString *SXProbeOwnVersion(void) { return @"0.1.35"; }
+NSString *SXProbeOwnVersion(void) { return @"0.1.36"; }
 void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
     if(!done)return;
     NSString *token=SXUpdateToken();
