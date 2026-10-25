@@ -262,6 +262,35 @@ static void SXRecordBioFontCandidates(void) {
     }
     SXRecord(@"profile-bio-font-candidates",@{@"methods":hits,@"valuesRead":@NO});
 }
+// Read ABI and Objective-C member declarations only; do not invoke private methods or read values.
+static void SXRecordProfileTypographyStructure(void) {
+    Class cls=objc_getClass("T1ProfileUserInfoView");
+    NSMutableArray *methods=[NSMutableArray array];
+    for(NSString *name in @[@"updateFontSize",@"_t1_setBioLabel:withText:entities:isUTF16Entities:"]) {
+        SEL selector=NSSelectorFromString(name);
+        Method method=cls?class_getInstanceMethod(cls,selector):NULL;
+        const char *encoding=method?method_getTypeEncoding(method):NULL;
+        [methods addObject:@{@"selector":name,@"exists":@(method!=NULL),
+          @"encoding":encoding?[NSString stringWithUTF8String:encoding]:@""}];
+    }
+    NSMutableArray *members=[NSMutableArray array];
+    for(Class owner=cls;owner && members.count<60;owner=class_getSuperclass(owner)) {
+        unsigned int count=0;
+        Ivar *ivars=class_copyIvarList(owner,&count);
+        for(unsigned int i=0;ivars && i<count && members.count<60;i++) {
+            const char *raw=ivar_getName(ivars[i]);
+            NSString *name=raw?[NSString stringWithUTF8String:raw]:@"";
+            NSString *lower=name.lowercaseString;
+            if([lower containsString:@"bio"]||[lower containsString:@"font"]||[lower containsString:@"text"]) {
+                const char *type=ivar_getTypeEncoding(ivars[i]);
+                [members addObject:@{@"owner":NSStringFromClass(owner),@"name":name,
+                  @"type":type?[NSString stringWithUTF8String:type]:@""}];
+            }
+        }
+        if(ivars)free(ivars);
+    }
+    SXRecord(@"profile-typography-structure",@{@"methods":methods,@"ivars":members,@"valuesRead":@NO});
+}
 static void SXRecordProfileBioSetterABI(void) {
     Class cls=objc_getClass("T1ProfileUserInfoView");
     SEL sel=NSSelectorFromString(@"_t1_setBioLabel:withText:entities:isUTF16Entities:");
@@ -627,6 +656,7 @@ static NSDictionary *SXBioSnapshot(void) {
     SXRecordFontDispatchStatus();
     SXRecordProfileBioSetterABI();
     SXRecordBioFontCandidates();
+    SXRecordProfileTypographyStructure();
     SXRecord(@"profile-bio-setter-counters",@{@"installed":@(SXBioSetterInstalled),@"calls":@(SXBioSetterCalls),@"textCaptured":@NO});
     NSDictionary *snapshot=SXBioSnapshot();
     SXRecord(@"profile-bio-view-snapshot",snapshot);
