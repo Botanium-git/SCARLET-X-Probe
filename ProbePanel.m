@@ -617,8 +617,9 @@ static NSDictionary *SXBioRenderedMetrics(void) {
                     [styles addObject:one];
                 }];
             }
+            CGRect bioFrame=((UIView *)label).frame;
             return @{@"status":@"captured",@"textLength":@(a.length),
-                     @"bioFrame":@[@(label.frame.origin.x),@(label.frame.origin.y),@(label.frame.size.width),@(label.frame.size.height)],
+                     @"bioFrame":@[@(bioFrame.origin.x),@(bioFrame.origin.y),@(bioFrame.size.width),@(bioFrame.size.height)],
                      @"styleRuns":styles,@"textCaptured":@NO};
         }
         for(UIView *child in v.subviews)if(stack.count<2000)[stack addObject:child];
