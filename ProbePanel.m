@@ -327,6 +327,51 @@ static void SXRecordBioTextViewStructure(void) {
     SXRecord(@"profile-bio-textview-structure",@{@"class":cls?NSStringFromClass(cls):@"missing",
       @"ivars":members,@"properties":properties,@"valuesRead":@NO});
 }
+// Class metadata only. This does not access any model/renderer instance or content.
+static void SXRecordBioModelRendererStructure(void) {
+    NSMutableArray *classes=[NSMutableArray array];
+    for(NSString *className in @[@"TFNAttributedTextModel",@"TFNAttributedTextRenderer"]) {
+        Class cls=objc_getClass(className.UTF8String);
+        NSMutableArray *ivars=[NSMutableArray array];
+        NSMutableArray *properties=[NSMutableArray array];
+        NSMutableArray *methods=[NSMutableArray array];
+        unsigned int count=0;
+        Ivar *items=cls?class_copyIvarList(cls,&count):NULL;
+        for(unsigned int i=0;items && i<count && ivars.count<100;i++) {
+            const char *name=ivar_getName(items[i]), *type=ivar_getTypeEncoding(items[i]);
+            [ivars addObject:@{@"name":name?[NSString stringWithUTF8String:name]:@"",
+                              @"type":type?[NSString stringWithUTF8String:type]:@""}];
+        }
+        if(items)free(items);
+        count=0;
+        objc_property_t *props=cls?class_copyPropertyList(cls,&count):NULL;
+        for(unsigned int i=0;props && i<count && properties.count<100;i++) {
+            const char *name=property_getName(props[i]), *attrs=property_getAttributes(props[i]);
+            [properties addObject:@{@"name":name?[NSString stringWithUTF8String:name]:@"",
+                                   @"attributes":attrs?[NSString stringWithUTF8String:attrs]:@""}];
+        }
+        if(props)free(props);
+        count=0;
+        Method *ms=cls?class_copyMethodList(cls,&count):NULL;
+        for(unsigned int i=0;ms && i<count && methods.count<100;i++) {
+            SEL sel=method_getName(ms[i]);
+            NSString *name=sel?NSStringFromSelector(sel):@"";
+            NSString *lower=name.lowercaseString;
+            if([lower containsString:@"font"]||[lower containsString:@"text"]||
+               [lower containsString:@"attribut"]||[lower containsString:@"line"]||
+               [lower containsString:@"paragraph"]||[lower containsString:@"layout"]||
+               [lower containsString:@"render"]) {
+                const char *type=method_getTypeEncoding(ms[i]);
+                [methods addObject:@{@"selector":name,
+                                   @"encoding":type?[NSString stringWithUTF8String:type]:@""}];
+            }
+        }
+        if(ms)free(ms);
+        [classes addObject:@{@"class":className,@"exists":@(cls!=Nil),
+                             @"ivars":ivars,@"properties":properties,@"methods":methods}];
+    }
+    SXRecord(@"profile-bio-model-renderer-structure",@{@"classes":classes,@"valuesRead":@NO});
+}
 static void SXRecordProfileBioSetterABI(void) {
     Class cls=objc_getClass("T1ProfileUserInfoView");
     SEL sel=NSSelectorFromString(@"_t1_setBioLabel:withText:entities:isUTF16Entities:");
@@ -694,6 +739,7 @@ static NSDictionary *SXBioSnapshot(void) {
     SXRecordBioFontCandidates();
     SXRecordProfileTypographyStructure();
     SXRecordBioTextViewStructure();
+    SXRecordBioModelRendererStructure();
     SXRecord(@"profile-bio-setter-counters",@{@"installed":@(SXBioSetterInstalled),@"calls":@(SXBioSetterCalls),@"textCaptured":@NO});
     NSDictionary *snapshot=SXBioSnapshot();
     SXRecord(@"profile-bio-view-snapshot",snapshot);
