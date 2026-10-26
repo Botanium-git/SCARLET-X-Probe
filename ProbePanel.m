@@ -1099,6 +1099,36 @@ static NSDictionary *SXBioSnapshot(void) {
       @"implementationImage":imageName, @"imageRelativeOffset":@(imageOffset),
       @"imageResolved":@(resolved), @"impReadOnly":@YES, @"textCaptured":@NO
     });
+    // Compare selected, known profile font selectors without invoking them.
+    NSMutableArray *fontImplementations=[NSMutableArray array];
+    NSArray *targets=@[
+      @[@"T1ProfileUserInfoView",@"updateFontSize"],
+      @[@"T1UserView",@"socialTextFont"],
+      @[@"T1UserView",@"socialTextFixedFont"]
+    ];
+    for(NSArray *target in targets) {
+        NSString *className=target[0], *selectorName=target[1];
+        Class targetClass=objc_getClass(className.UTF8String);
+        Method candidate=targetClass?class_getInstanceMethod(targetClass,NSSelectorFromString(selectorName)):NULL;
+        IMP candidateIMP=candidate?method_getImplementation(candidate):NULL;
+        Dl_info candidateInfo={0};
+        BOOL candidateResolved=candidateIMP && dladdr((const void *)candidateIMP,&candidateInfo)!=0;
+        NSString *candidateImage=candidateResolved && candidateInfo.dli_fname?
+          [[NSString stringWithUTF8String:candidateInfo.dli_fname] lastPathComponent]:@"unknown";
+        uintptr_t candidateOffset=candidateResolved && candidateInfo.dli_fbase?
+          (uintptr_t)candidateIMP-(uintptr_t)candidateInfo.dli_fbase:0;
+        const char *candidateTypes=candidate?method_getTypeEncoding(candidate):NULL;
+        [fontImplementations addObject:@{@"class":className,@"selector":selectorName,
+          @"exists":@(candidate!=NULL),@"typeEncoding":candidateTypes?
+            [NSString stringWithUTF8String:candidateTypes]:@"",
+          @"implementationImage":candidateImage,@"imageRelativeOffset":@(candidateOffset),
+          @"imageResolved":@(candidateResolved)}];
+    }
+    SXRecord(@"profile-font-implementation-comparison",@{
+      @"methods":fontImplementations,@"methodsInvoked":@NO,@"methodsReplaced":@NO,
+      @"textCaptured":@NO
+    });
+
 
     Class fontClass=objc_getClass("TAEFontSettings");
     SEL fontSel=NSSelectorFromString(@"fontSizeWithBaselineFontSize:contentSizeCategory:contentSizeModifier:windowSize:");
