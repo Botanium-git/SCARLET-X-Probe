@@ -566,6 +566,40 @@ static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *vi
 // Manual, main-thread-only capture of typography from the actual profile bio view.
 // Never export the user's bio text or attributed-string contents.
 // Read-only font decision context; this enumerates possible providers, not a proven call graph.
+// Manual read-only snapshot of the actual UIFont class token used by the bio setter.
+// No interception, content access, global-state mutation, or calls to private setters.
+static void SXRecordBioFontTokenRuntime(void) {
+    Class fontClass=objc_getClass("UIFont");
+    SEL tokenSel=NSSelectorFromString(@"xds_body");
+    Method tokenMethod=fontClass?class_getClassMethod(fontClass,tokenSel):NULL;
+    NSMutableDictionary *result=[@{@"selector":@"xds_body",
+      @"methodPresent":@(tokenMethod!=NULL),@"valuesRead":@NO,
+      @"textCaptured":@NO} mutableCopy];
+    if(tokenMethod) {
+        const char *types=method_getTypeEncoding(tokenMethod);
+        result[@"typeEncoding"]=types?[NSString stringWithUTF8String:types]:@"";
+        result[@"implementationImage"]=SXIMPImageName(method_getImplementation(tokenMethod));
+        // Only invoke the known zero-argument object-returning getter on UIFont.
+        NSMethodSignature *signature=types?[NSMethodSignature signatureWithObjCTypes:types]:nil;
+        if(signature && signature.numberOfArguments==2 &&
+           signature.methodReturnLength==sizeof(id) && types[0]=='@') {
+            @try {
+                UIFont *(*getter)(id,SEL)=(UIFont *(*)(id,SEL))method_getImplementation(tokenMethod);
+                id value=getter(fontClass,tokenSel);
+                if([value isKindOfClass:UIFont.class]) {
+                    UIFont *font=(UIFont *)value;
+                    result[@"fontName"]=font.fontName?:@"";
+                    result[@"pointSize"]=@(font.pointSize);
+                    result[@"lineHeight"]=@(font.lineHeight);
+                    result[@"valuesRead"]=@YES;
+                } else result[@"returnedClass"]=value?NSStringFromClass([value class]):@"nil";
+            } @catch(NSException *exception) {
+                result[@"getterException"]=exception.name?:@"unknown";
+            }
+        } else result[@"reason"]=@"ABI mismatch; getter not called";
+    }
+    SXRecord(@"profile-bio-xds-body-runtime",result);
+}
 static NSDictionary *SXBioFontDecisionContext(void) {
     NSMutableArray *classes=[NSMutableArray array];
     for(NSString *className in @[@"T1ProfileUserInfoView",@"T1ProfileHeaderView",@"TFNAttributedTextView",@"TFNLayoutMetrics"]) {
@@ -960,6 +994,7 @@ static NSDictionary *SXBioSnapshot(void) {
     SXRecordFontDispatchStatus();
     SXRecordProfileBioSetterABI();
     SXRecordBioFontCandidates();
+    SXRecordBioFontTokenRuntime();
     SXRecordProfileTypographyStructure();
     SXRecordBioTextViewStructure();
     SXRecordBioModelRendererStructure();
