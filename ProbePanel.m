@@ -1080,6 +1080,26 @@ static NSDictionary *SXBioSnapshot(void) {
     SXRecordBioFontCandidates();
     SXRecordBioFontTokenRuntime();
     SXRecordFontWidthABIMetadata();
+    // Read-only IMP identity of the actual v12.35 profile font updater.
+    Class profileClass=objc_getClass("T1ProfileUserInfoView");
+    SEL updateSel=NSSelectorFromString(@"updateFontSize");
+    Method updateMethod=profileClass?class_getInstanceMethod(profileClass,updateSel):NULL;
+    IMP updateIMP=updateMethod?method_getImplementation(updateMethod):NULL;
+    Dl_info updateInfo={0};
+    BOOL resolved=updateIMP && dladdr((const void *)updateIMP,&updateInfo)!=0;
+    NSString *imageName=resolved && updateInfo.dli_fname?
+      [[NSString stringWithUTF8String:updateInfo.dli_fname] lastPathComponent]:@"unknown";
+    uintptr_t imageOffset=resolved && updateInfo.dli_fbase?
+      (uintptr_t)updateIMP-(uintptr_t)updateInfo.dli_fbase:0;
+    const char *updateTypes=updateMethod?method_getTypeEncoding(updateMethod):NULL;
+    SXRecord(@"profile-update-font-imp",@{
+      @"class":@"T1ProfileUserInfoView", @"selector":@"updateFontSize",
+      @"exists":@(updateMethod!=NULL), @"typeEncoding":updateTypes?
+        [NSString stringWithUTF8String:updateTypes]:@"",
+      @"implementationImage":imageName, @"imageRelativeOffset":@(imageOffset),
+      @"imageResolved":@(resolved), @"impReadOnly":@YES, @"textCaptured":@NO
+    });
+
     Class fontClass=objc_getClass("TAEFontSettings");
     SEL fontSel=NSSelectorFromString(@"fontSizeWithBaselineFontSize:contentSizeCategory:contentSizeModifier:windowSize:");
     Method fontMethod=fontClass?class_getClassMethod(fontClass,fontSel):NULL;
