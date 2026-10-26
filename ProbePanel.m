@@ -577,7 +577,7 @@ static void SXRecordFontWidthABIMetadata(void) {
     NSMutableArray *methods=[NSMutableArray array];
     // UIFont is confirmed by the original X binary as the default-font receiver.
     // Other classes are inspected only if named explicitly, without runtime-wide enumeration.
-    for(NSString *className in @[@"UIFont",@"TFNFontSize",@"TFNFontSizeConfiguration"]) {
+    for(NSString *className in @[@"UIFont",@"TAEFontSettings"]) {
         Class cls=objc_getClass(className.UTF8String);
         if(!cls)continue;
         for(NSString *name in names) {
