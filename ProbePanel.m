@@ -451,6 +451,53 @@ static NSDictionary *SXBioModelFontSnapshot(id label) {
     return @{@"status":@"captured", @"textLength":@(styled.length),
              @"styleRuns":SXTypographyMetrics(styled),@"textCaptured":@NO};
 }
+// Observe only setTextModel: calls made synchronously by the profile Bio setter.
+typedef void (*SXTextModelSetterIMP)(id,SEL,id);
+static SXTextModelSetterIMP SXOriginalTextModelSetter=NULL;
+static BOOL SXTextModelSetterInstalled=NO;
+static volatile int SXTextModelSetterCalls=0;
+static __thread void *SXActiveBioLabel=NULL;
+static __thread NSUInteger SXActiveBioCall=0;
+static void SXObservedTextModelSetter(id receiver,SEL selector,id model) {
+    BOOL relevant=((void *)receiver==SXActiveBioLabel && SXActiveBioCall>0);
+    NSUInteger index=SXActiveBioCall;
+    int sample=(relevant && SXEnabled)?__sync_add_and_fetch(&SXTextModelSetterCalls,1):0;
+    if(sample>0 && sample<=24) {
+        NSDictionary *incoming=@{@"status":@"nil-model"};
+        if(model) {
+            incoming=@{@"status":@"attributed-getter-unavailable"};
+            SEL s=NSSelectorFromString(@"attributedString");
+            Method m=class_getInstanceMethod([model class],s);
+            if(m && strcmp(method_getTypeEncoding(m),"@16@0:8")==0) {
+                id rich=((id(*)(id,SEL))objc_msgSend)(model,s);
+                if([rich isKindOfClass:NSAttributedString.class]) {
+                    NSAttributedString *styled=(NSAttributedString *)rich;
+                    incoming=@{@"status":@"captured",@"textLength":@(styled.length),
+                      @"styleRuns":SXTypographyMetrics(styled),@"textCaptured":@NO};
+                }
+            }
+        }
+        SXRecord(@"profile-bio-set-text-model",@{@"callIndex":@(index),
+          @"sampleIndex":@(sample),@"incomingModel":incoming,@"textCaptured":@NO});
+    }
+    if(SXOriginalTextModelSetter)SXOriginalTextModelSetter(receiver,selector,model);
+}
+static void SXInstallTextModelSetterObserver(void) {
+    if(SXTextModelSetterInstalled)return;
+    Class cls=objc_getClass("TFNAttributedTextView");
+    SEL sel=NSSelectorFromString(@"setTextModel:");
+    Method method=cls?class_getInstanceMethod(cls,sel):NULL;
+    const char *abi=method?method_getTypeEncoding(method):NULL;
+    if(!abi || strcmp(abi,"v24@0:8@16")!=0)return;
+    IMP previous=method_getImplementation(method);
+    if(!previous || previous==(IMP)SXObservedTextModelSetter)return;
+    SXOriginalTextModelSetter=(SXTextModelSetterIMP)previous;
+    class_replaceMethod(cls,sel,(IMP)SXObservedTextModelSetter,abi);
+    SXTextModelSetterInstalled=YES;
+    SXRecord(@"profile-bio-text-model-hook-installed",@{
+      @"abiVerified":@YES,@"originalImage":SXIMPImageName(previous),
+      @"textCaptured":@NO,@"sampleLimit":@24});
+}
 static void SXObservedBioSetter(id target,SEL selector,id label,id text,id entities,BOOL utf16) {
     SXBioSetterCalls++;
     if(SXEnabled && SXBioSetterCalls<=40) {
@@ -476,7 +523,13 @@ static void SXObservedBioSetter(id target,SEL selector,id label,id text,id entit
             @"model":SXBioModelFontSnapshot(label),
             @"textCaptured":@NO});
     }
+    void *previousLabel=SXActiveBioLabel;
+    NSUInteger previousCall=SXActiveBioCall;
+    SXActiveBioLabel=(void *)label;
+    SXActiveBioCall=SXBioSetterCalls;
     if(SXOriginalBioSetter)SXOriginalBioSetter(target,selector,label,text,entities,utf16);
+    SXActiveBioLabel=previousLabel;
+    SXActiveBioCall=previousCall;
     if(SXEnabled && SXBioSetterCalls<=20 && [label isKindOfClass:UIView.class]) {
         NSMutableDictionary *meta=[SXBioPostSetTypography(label) mutableCopy];
         meta[@"callIndex"]=@(SXBioSetterCalls);
@@ -1344,12 +1397,14 @@ static void SXProbeInit(void) {
                 SXInstallTemporaryEntry();
                 SXInstallProfileFontObservers();
                 SXInstallBioSetterObserver();
+                SXInstallTextModelSetterObserver();
                 SXInstallFontWidthCalcObserver();
                 SXInstallProfileUpdateFontObserver();
             }];
             SXInstallTemporaryEntry();
             SXInstallProfileFontObservers();
             SXInstallBioSetterObserver();
+            SXInstallTextModelSetterObserver();
             SXInstallFontWidthCalcObserver();
                 SXInstallProfileUpdateFontObserver();
             SXCollectAutomaticMethodMetadataIfEnabled();
