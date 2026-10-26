@@ -607,7 +607,7 @@ static void SXRecordFontWidthDecisionMetadata(void) {
     NSMutableArray *owners=[NSMutableArray array];
     int count=objc_getClassList(NULL,0);
     if(count>0 && count<50000) {
-        Class *classes=calloc((size_t)count,sizeof(Class));
+        Class __unsafe_unretained *classes=(Class __unsafe_unretained *)calloc((size_t)count,sizeof(Class));
         if(classes) {
             int actual=objc_getClassList(classes,count);
             for(int i=0;i<actual && i<count;i++) {
