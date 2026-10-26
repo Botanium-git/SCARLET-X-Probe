@@ -430,6 +430,27 @@ static NSDictionary *SXBioPostSetTypography(id label) {
     }
     return result;
 }
+// Inspect the actual TFNAttributedTextModel, not absent UILabel-style font getters.
+static NSDictionary *SXBioModelFontSnapshot(id label) {
+    if(!label || ![label isKindOfClass:objc_getClass("TFNAttributedTextView")])
+        return @{@"status":@"not-bio-textview"};
+    SEL modelSel=NSSelectorFromString(@"textModel");
+    Method modelMethod=class_getInstanceMethod([label class],modelSel);
+    if(!modelMethod || strcmp(method_getTypeEncoding(modelMethod),"@16@0:8")!=0)
+        return @{@"status":@"model-getter-unavailable"};
+    id model=((id(*)(id,SEL))objc_msgSend)(label,modelSel);
+    if(!model)return @{@"status":@"model-not-set"};
+    SEL richSel=NSSelectorFromString(@"attributedString");
+    Method richMethod=class_getInstanceMethod([model class],richSel);
+    if(!richMethod || strcmp(method_getTypeEncoding(richMethod),"@16@0:8")!=0)
+        return @{@"status":@"attributed-getter-unavailable"};
+    id rich=((id(*)(id,SEL))objc_msgSend)(model,richSel);
+    if(![rich isKindOfClass:NSAttributedString.class])
+        return @{@"status":@"attributed-string-unavailable"};
+    NSAttributedString *styled=(NSAttributedString *)rich;
+    return @{@"status":@"captured", @"textLength":@(styled.length),
+             @"styleRuns":SXTypographyMetrics(styled),@"textCaptured":@NO};
+}
 static void SXObservedBioSetter(id target,SEL selector,id label,id text,id entities,BOOL utf16) {
     SXBioSetterCalls++;
     if(SXEnabled && SXBioSetterCalls<=40) {
@@ -454,6 +475,17 @@ static void SXObservedBioSetter(id target,SEL selector,id label,id text,id entit
         meta[@"callIndex"]=@(SXBioSetterCalls);
         meta[@"textCaptured"]=@NO;
         SXRecord(@"profile-bio-postset-typography",meta);
+        SXRecord(@"profile-bio-model-immediate",@{
+            @"callIndex":@(SXBioSetterCalls),
+            @"model":SXBioModelFontSnapshot(label),@"textCaptured":@NO});
+        NSUInteger capturedIndex=SXBioSetterCalls;
+        __weak id weakLabel=label;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            id currentLabel=weakLabel;
+            if(currentLabel) SXRecord(@"profile-bio-model-next-tick",@{
+                @"callIndex":@(capturedIndex),
+                @"model":SXBioModelFontSnapshot(currentLabel),@"textCaptured":@NO});
+        });
     }
 }
 static void SXInstallBioSetterObserver(void) {
