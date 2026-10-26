@@ -3,6 +3,8 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <dlfcn.h>
+#import <mach-o/dyld.h>
+#import <mach-o/loader.h>
 #include <string.h>
 #include <math.h>
 extern BOOL SXDriveIsConnected(void);
@@ -465,8 +467,38 @@ static SXModelInit1IMP SXOriginalModelInit1=NULL;
 static SXModelInit2IMP SXOriginalModelInit2=NULL;
 static BOOL SXModelInit1Installed=NO, SXModelInit2Installed=NO;
 static volatile int SXModelInitSamples=0;
+static BOOL SXRuntimeUUIDRecorded=NO;
+static void SXRecordLoadedT1UUID(void) {
+    if(SXRuntimeUUIDRecorded || !SXEnabled)return;
+    uint32_t n=_dyld_image_count();
+    for(uint32_t i=0;i<n;i++) {
+        const char *path=_dyld_get_image_name(i);
+        if(!path || strcmp(strrchr(path,'/')?strrchr(path,'/')+1:path,"T1Twitter"))continue;
+        const struct mach_header *header=_dyld_get_image_header(i);
+        if(!header || header->magic!=MH_MAGIC_64)continue;
+        const struct mach_header_64 *h=(const struct mach_header_64 *)header;
+        const uint8_t *ptr=(const uint8_t *)(h+1);
+        const uint8_t *end=ptr+h->sizeofcmds;
+        NSString *uuid=@"missing";
+        for(uint32_t j=0;j<h->ncmds;j++) {
+            if(ptr+sizeof(struct load_command)>end)break;
+            const struct load_command *cmd=(const struct load_command *)ptr;
+            if(cmd->cmdsize<sizeof(struct load_command)||ptr+cmd->cmdsize>end)break;
+            if(cmd->cmd==LC_UUID && cmd->cmdsize>=sizeof(struct uuid_command)) {
+                const struct uuid_command *u=(const struct uuid_command *)ptr;
+                uuid=[[[NSUUID alloc] initWithUUIDBytes:u->uuid] UUIDString];
+                break;
+            }
+            ptr+=cmd->cmdsize;
+        }
+        SXRecord(@"profile-bio-runtime-uuid",@{@"uuid":uuid,@"image":@"T1Twitter",@"textCaptured":@NO});
+        SXRuntimeUUIDRecorded=YES;
+        return;
+    }
+}
 static void SXRecordModelInitInput(id rich, NSString *kind) {
     if(!SXEnabled || SXActiveBioCall==0)return;
+    SXRecordLoadedT1UUID();
     int sample=__sync_add_and_fetch(&SXModelInitSamples,1);
     if(sample>24)return;
     NSDictionary *snapshot=@{@"status":@"not-attributed-string"};
