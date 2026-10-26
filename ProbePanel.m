@@ -459,7 +459,7 @@ static volatile int SXTextModelSetterCalls=0;
 static __thread void *SXActiveBioLabel=NULL;
 static __thread NSUInteger SXActiveBioCall=0;
 static void SXObservedTextModelSetter(id receiver,SEL selector,id model) {
-    BOOL relevant=((void *)receiver==SXActiveBioLabel && SXActiveBioCall>0);
+    BOOL relevant=((__bridge void *)receiver==SXActiveBioLabel && SXActiveBioCall>0);
     NSUInteger index=SXActiveBioCall;
     int sample=(relevant && SXEnabled)?__sync_add_and_fetch(&SXTextModelSetterCalls,1):0;
     if(sample>0 && sample<=24) {
@@ -525,7 +525,7 @@ static void SXObservedBioSetter(id target,SEL selector,id label,id text,id entit
     }
     void *previousLabel=SXActiveBioLabel;
     NSUInteger previousCall=SXActiveBioCall;
-    SXActiveBioLabel=(void *)label;
+    SXActiveBioLabel=(__bridge void *)label;
     SXActiveBioCall=SXBioSetterCalls;
     if(SXOriginalBioSetter)SXOriginalBioSetter(target,selector,label,text,entities,utf16);
     SXActiveBioLabel=previousLabel;
