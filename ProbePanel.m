@@ -490,7 +490,7 @@ static void SXRecordModelInitInput(id rich, NSString *kind) {
     SXRecord(@"profile-bio-model-init",@{
       @"callIndex":@(SXActiveBioCall), @"sampleIndex":@(sample),
       @"initializer":kind, @"incomingAttributedString":snapshot,
-      @"callerFrames":origins, @"runtimeImageUUIDStatus":@"not-yet-verified", @"textCaptured":@NO});
+      @"callerFrames":origins, @"textCaptured":@NO});
 }
 static id SXObservedModelInit1(id receiver, SEL selector, id rich) {
     SXRecordModelInitInput(rich,@"initWithAttributedString:");
