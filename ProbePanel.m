@@ -475,10 +475,22 @@ static void SXRecordModelInitInput(id rich, NSString *kind) {
         snapshot=@{@"status":@"captured", @"textLength":@(styled.length),
           @"styleRuns":SXTypographyMetrics(styled), @"textCaptured":@NO};
     }
+    NSArray<NSNumber *> *frames=[NSThread callStackReturnAddresses];
+    NSMutableArray *origins=[NSMutableArray array];
+    NSUInteger depth=MIN((NSUInteger)8,frames.count);
+    for(NSUInteger frameIndex=1;frameIndex<depth;frameIndex++) {
+        void *addr=(void *)(uintptr_t)frames[frameIndex].unsignedLongLongValue;
+        Dl_info info={0};
+        if(dladdr(addr,&info) && info.dli_fbase) {
+            uintptr_t offset=(uintptr_t)addr-(uintptr_t)info.dli_fbase;
+            NSString *name=info.dli_fname?[NSString stringWithUTF8String:info.dli_fname].lastPathComponent:@"unknown";
+            [origins addObject:@{@"image":name?:@"unknown",@"offset":@(offset)}];
+        }
+    }
     SXRecord(@"profile-bio-model-init",@{
       @"callIndex":@(SXActiveBioCall), @"sampleIndex":@(sample),
       @"initializer":kind, @"incomingAttributedString":snapshot,
-      @"textCaptured":@NO});
+      @"callerFrames":origins, @"textCaptured":@NO});
 }
 static id SXObservedModelInit1(id receiver, SEL selector, id rich) {
     SXRecordModelInitInput(rich,@"initWithAttributedString:");
