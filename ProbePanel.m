@@ -600,57 +600,6 @@ static void SXRecordBioFontTokenRuntime(void) {
     }
     SXRecord(@"profile-bio-xds-body-runtime",result);
 }
-// Manual ABI discovery for the font-size helper; no swizzling and no private-method invocation.
-static void SXRecordFontWidthDecisionMetadata(void) {
-    SEL target=NSSelectorFromString(@"fontSizeWithBaselineFontSize:contentSizeCategory:contentSizeModifier:windowSize:");
-    SEL flag=NSSelectorFromString(@"isFontSizeIgnoreDeviceWidthEnabled");
-    NSMutableArray *owners=[NSMutableArray array];
-    int count=objc_getClassList(NULL,0);
-    if(count>0 && count<50000) {
-        Class __unsafe_unretained *classes=(Class __unsafe_unretained *)calloc((size_t)count,sizeof(Class));
-        if(classes) {
-            int actual=objc_getClassList(classes,count);
-            for(int i=0;i<actual && i<count;i++) {
-                Class cls=classes[i];
-                for(int meta=0;meta<2;meta++) {
-                    Class owner=meta?object_getClass(cls):cls;
-                    if(!owner)continue;
-                    for(int which=0;which<2;which++) {
-                        SEL sel=which?flag:target;
-                        // Enumerate only methods directly owned, not inherited ones.
-                        unsigned int n=0;
-                        Method *methods=class_copyMethodList(owner,&n);
-                        for(unsigned int m=0;methods && m<n;m++)if(method_getName(methods[m])==sel) {
-                            const char *enc=method_getTypeEncoding(methods[m]);
-                            [owners addObject:@{@"class":NSStringFromClass(cls)?:@"",
-                              @"classMethod":@(meta!=0),@"selector":NSStringFromSelector(sel),
-                              @"typeEncoding":enc?[NSString stringWithUTF8String:enc]:@"",
-                              @"implementationImage":SXIMPImageName(method_getImplementation(methods[m]))}];
-                        }
-                        if(methods)free(methods);
-                    }
-                }
-            }
-            free(classes);
-        }
-    }
-    UIWindow *window=nil;
-    for(UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if(![scene isKindOfClass:UIWindowScene.class] || scene.activationState!=UISceneActivationStateForegroundActive)continue;
-        for(UIWindow *w in ((UIWindowScene *)scene).windows)if(!w.hidden){window=w;break;}
-        if(window)break;
-    }
-    CGSize s=UIScreen.mainScreen.bounds.size;
-    CGSize w=window?window.bounds.size:CGSizeZero;
-    double shortest=MIN(w.width,w.height);
-    NSInteger widthClass=shortest<376?0:(shortest<401?1:(shortest<513?2:3));
-    SXRecord(@"font-width-decision-metadata",@{@"owners":owners,
-      @"screenPoints":@[@(s.width),@(s.height)],
-      @"windowPoints":@[@(w.width),@(w.height)],
-      @"windowSizeClassIfBoundsPassed":window?@(widthClass):@(-1),
-      @"valueIsHypothetical":@YES,@"actualHelperArgumentsObserved":@NO,
-      @"privateGettersInvoked":@NO,@"textCaptured":@NO});
-}
 static NSDictionary *SXBioFontDecisionContext(void) {
     NSMutableArray *classes=[NSMutableArray array];
     for(NSString *className in @[@"T1ProfileUserInfoView",@"T1ProfileHeaderView",@"TFNAttributedTextView",@"TFNLayoutMetrics"]) {
@@ -1046,7 +995,6 @@ static NSDictionary *SXBioSnapshot(void) {
     SXRecordProfileBioSetterABI();
     SXRecordBioFontCandidates();
     SXRecordBioFontTokenRuntime();
-    SXRecordFontWidthDecisionMetadata();
     SXRecordProfileTypographyStructure();
     SXRecordBioTextViewStructure();
     SXRecordBioModelRendererStructure();
