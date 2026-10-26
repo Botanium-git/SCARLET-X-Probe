@@ -48,6 +48,18 @@ jobs:
           echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
           if ! command -v ldid >/dev/null 2>&1; then brew install ldid; fi
           du -sh "$THEOS"
+      - name: Verify SXP version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(sed -n 's/^Version: //p' control)"
+          display_version="$(sed -n 's/.*NSString \*SXProbeOwnVersion(void) { return @"\([^"]*\)"; }.*/\1/p' ProbePrivateUpdate.m)"
+          marker_version="$(sed -n 's@^// SCARLET-X-Probe @@p' Tweak.xm)"
+          echo "Package=$package_version Display=$display_version Marker=$marker_version"
+          test -n "$package_version"
+          test "$package_version" = "$display_version"
+          test "$package_version" = "$marker_version"
+
       - name: Build RootHide package
         env:
           THEOS_PACKAGE_SCHEME: roothide
