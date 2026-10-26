@@ -568,6 +568,48 @@ static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *vi
 // Read-only font decision context; this enumerates possible providers, not a proven call graph.
 // Manual read-only snapshot of the actual UIFont class token used by the bio setter.
 // No interception, content access, global-state mutation, or calls to private setters.
+// Targeted, read-only ABI discovery. No class-list enumeration or method replacement.
+static void SXRecordFontWidthABIMetadata(void) {
+    NSArray<NSString *> *names=@[@"tfn_defaultFontSize",
+      @"fontSizeWithBaselineFontSize:contentSizeCategory:contentSizeModifier:windowSize:",
+      @"isFontSizeIgnoreDeviceWidthEnabled",
+      @"tfn_dynamicFontSizeOffsetBy:",@"tfn_dynamicFontSize"];
+    NSMutableArray *methods=[NSMutableArray array];
+    // UIFont is confirmed by the original X binary as the default-font receiver.
+    // Other classes are inspected only if named explicitly, without runtime-wide enumeration.
+    for(NSString *className in @[@"UIFont",@"TFNFontSize",@"TFNFontSizeConfiguration"]) {
+        Class cls=objc_getClass(className.UTF8String);
+        if(!cls)continue;
+        for(NSString *name in names) {
+            SEL sel=NSSelectorFromString(name);
+            for(int kind=0;kind<2;kind++) {
+                Method method=kind?class_getClassMethod(cls,sel):class_getInstanceMethod(cls,sel);
+                if(!method)continue;
+                const char *encoding=method_getTypeEncoding(method);
+                [methods addObject:@{@"class":className,@"selector":name,
+                  @"classMethod":@(kind!=0),
+                  @"typeEncoding":encoding?[NSString stringWithUTF8String:encoding]:@"",
+                  @"implementationImage":SXIMPImageName(method_getImplementation(method))}];
+            }
+        }
+    }
+    CGSize screen=UIScreen.mainScreen.bounds.size;
+    NSMutableArray *windows=[NSMutableArray array];
+    for(UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if(![scene isKindOfClass:UIWindowScene.class] ||
+           scene.activationState!=UISceneActivationStateForegroundActive)continue;
+        for(UIWindow *window in ((UIWindowScene *)scene).windows) {
+            if(window.hidden)continue;
+            CGSize size=window.bounds.size;
+            [windows addObject:@{@"points":@[@(size.width),@(size.height)],
+              @"key":@(window.isKeyWindow)}];
+        }
+    }
+    SXRecord(@"font-width-abi-metadata",@{@"methods":methods,
+      @"screenPoints":@[@(screen.width),@(screen.height)],
+      @"visibleWindows":windows,@"actualHelperArgumentsObserved":@NO,
+      @"privateMethodsInvoked":@NO,@"textCaptured":@NO});
+}
 static void SXRecordBioFontTokenRuntime(void) {
     Class fontClass=objc_getClass("UIFont");
     SEL tokenSel=NSSelectorFromString(@"xds_body");
@@ -995,6 +1037,7 @@ static NSDictionary *SXBioSnapshot(void) {
     SXRecordProfileBioSetterABI();
     SXRecordBioFontCandidates();
     SXRecordBioFontTokenRuntime();
+    SXRecordFontWidthABIMetadata();
     SXRecordProfileTypographyStructure();
     SXRecordBioTextViewStructure();
     SXRecordBioModelRendererStructure();
