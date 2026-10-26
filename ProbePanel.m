@@ -574,6 +574,8 @@ typedef double (*SXFontWidthCalcIMP)(id,SEL,double,id,NSInteger,CGSize);
 static SXFontWidthCalcIMP SXOriginalFontWidthCalc=NULL;
 static BOOL SXFontWidthCalcInstalled=NO;
 static int SXFontWidthCalcCalls=0;
+static int SXFontWidthCalcEligible=0;
+static int SXFontWidthCalcQueued=0;
 static double SXObservedFontWidthCalc(id receiver,SEL selector,double baseline,id category,
                                       NSInteger modifier,CGSize windowSize) {
     SXFontWidthCalcIMP original=SXOriginalFontWidthCalc;
@@ -581,11 +583,13 @@ static double SXObservedFontWidthCalc(id receiver,SEL selector,double baseline,i
     double result=original(receiver,selector,baseline,category,modifier,windowSize);
     int call=__sync_add_and_fetch(&SXFontWidthCalcCalls,1);
     if(call<=64 && SXEnabled && SXQueue) {
+        __sync_add_and_fetch(&SXFontWidthCalcEligible,1);
         NSString *categoryName=[category isKindOfClass:NSString.class]?(NSString *)category:@"(non-string)";
         NSDictionary *fields=@{@"callIndex":@(call),@"baseline":@(baseline),
           @"contentSizeCategory":categoryName,@"modifier":@(modifier),
           @"windowSize":@[@(windowSize.width),@(windowSize.height)],
           @"result":@(result),@"textCaptured":@NO};
+        __sync_add_and_fetch(&SXFontWidthCalcQueued,1);
         dispatch_async(dispatch_get_main_queue(), ^{ SXRecord(@"font-width-calculation-call",fields); });
     }
     return result;
@@ -1076,6 +1080,21 @@ static NSDictionary *SXBioSnapshot(void) {
     SXRecordBioFontCandidates();
     SXRecordBioFontTokenRuntime();
     SXRecordFontWidthABIMetadata();
+    Class fontClass=objc_getClass("TAEFontSettings");
+    SEL fontSel=NSSelectorFromString(@"fontSizeWithBaselineFontSize:contentSizeCategory:contentSizeModifier:windowSize:");
+    Method fontMethod=fontClass?class_getClassMethod(fontClass,fontSel):NULL;
+    IMP currentFontIMP=fontMethod?method_getImplementation(fontMethod):NULL;
+    int observed=__sync_fetch_and_add(&SXFontWidthCalcCalls,0);
+    int eligible=__sync_fetch_and_add(&SXFontWidthCalcEligible,0);
+    int queued=__sync_fetch_and_add(&SXFontWidthCalcQueued,0);
+    SXRecord(@"font-width-calculation-counters",@{@"hookInstalled":@(SXFontWidthCalcInstalled),
+      @"currentIsObserver":@(currentFontIMP==(IMP)SXObservedFontWidthCalc),
+      @"originalAvailable":@(SXOriginalFontWidthCalc!=NULL),
+      @"totalCalls":@(observed),@"eligibleCalls":@(eligible),@"queuedCalls":@(queued),
+      @"suppressedByLimit":@(observed>64?observed-64:0),
+      @"recordingEnabled":@(SXEnabled),@"queueAvailable":@(SXQueue!=NULL),
+      @"sampleLimit":@64,@"textCaptured":@NO});
+
     SXRecordProfileTypographyStructure();
     SXRecordBioTextViewStructure();
     SXRecordBioModelRendererStructure();
