@@ -469,6 +469,13 @@ static void SXObservedBioSetter(id target,SEL selector,id label,id text,id entit
         }
         SXRecord(@"profile-bio-setter-call",meta);
     }
+    // Same label and call index as post-set: capture the model before X mutates it.
+    if(SXEnabled && SXBioSetterCalls<=20 && [label isKindOfClass:UIView.class]) {
+        SXRecord(@"profile-bio-model-before",@{
+            @"callIndex":@(SXBioSetterCalls),
+            @"model":SXBioModelFontSnapshot(label),
+            @"textCaptured":@NO});
+    }
     if(SXOriginalBioSetter)SXOriginalBioSetter(target,selector,label,text,entities,utf16);
     if(SXEnabled && SXBioSetterCalls<=20 && [label isKindOfClass:UIView.class]) {
         NSMutableDictionary *meta=[SXBioPostSetTypography(label) mutableCopy];
