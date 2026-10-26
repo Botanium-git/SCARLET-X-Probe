@@ -610,6 +610,45 @@ static void SXInstallFontWidthCalcObserver(void) {
     SXRecord(@"font-width-calculation-hook-installed",@{@"abiVerified":@YES,
       @"originalImage":SXIMPImageName(imp),@"limit":@64,@"textCaptured":@NO});
 }
+static NSDictionary *SXBioRenderedMetrics(void);
+// Passive, ABI-checked observer: preserves the original font updater.
+typedef void (*SXProfileUpdateFontIMP)(id,SEL);
+static SXProfileUpdateFontIMP SXOriginalProfileUpdateFont=NULL;
+static BOOL SXProfileUpdateFontInstalled=NO;
+static volatile int SXProfileUpdateFontCalls=0;
+static void SXObservedProfileUpdateFont(id receiver, SEL selector) {
+    SXProfileUpdateFontIMP original=SXOriginalProfileUpdateFont;
+    if(!original)return;
+    original(receiver,selector);
+    int index=__sync_add_and_fetch(&SXProfileUpdateFontCalls,1);
+    if(index<=12 && SXEnabled && SXQueue) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSDictionary *metrics=SXBioRenderedMetrics();
+            SXRecord(@"profile-update-font-call",@{
+                @"callIndex":@(index),@"renderedMetricsStatus":metrics[@"status"]?:@"captured",
+                @"bioStyleRuns":metrics[@"styleRuns"]?:@[],
+                @"bioFrame":metrics[@"bioFrame"]?:@[],
+                @"textCaptured":@NO
+            });
+        });
+    }
+}
+static void SXInstallProfileUpdateFontObserver(void) {
+    if(SXProfileUpdateFontInstalled)return;
+    Class cls=objc_getClass("T1ProfileUserInfoView");
+    SEL selector=NSSelectorFromString(@"updateFontSize");
+    Method method=cls?class_getInstanceMethod(cls,selector):NULL;
+    const char *abi=method?method_getTypeEncoding(method):NULL;
+    if(!abi || strcmp(abi,"v16@0:8")!=0)return;
+    IMP current=method_getImplementation(method);
+    if(!current || current==(IMP)SXObservedProfileUpdateFont)return;
+    SXOriginalProfileUpdateFont=(SXProfileUpdateFontIMP)current;
+    class_replaceMethod(cls,selector,(IMP)SXObservedProfileUpdateFont,abi);
+    SXProfileUpdateFontInstalled=YES;
+    SXRecord(@"profile-update-font-hook-installed",@{
+      @"originalImage":SXIMPImageName(current),@"abiVerified":@YES,
+      @"sampleLimit":@12,@"textCaptured":@NO});
+}
 // Targeted, read-only ABI discovery. No class-list enumeration or method replacement.
 static void SXRecordFontWidthABIMetadata(void) {
     NSArray<NSString *> *names=@[@"tfn_defaultFontSize",
@@ -1149,6 +1188,11 @@ static NSDictionary *SXBioSnapshot(void) {
     SXRecordBioTextViewStructure();
     SXRecordBioModelRendererStructure();
     SXRecord(@"profile-bio-font-decision-context",SXBioFontDecisionContext());
+    SXRecord(@"profile-update-font-counters",@{
+      @"installed":@(SXProfileUpdateFontInstalled),
+      @"calls":@(SXProfileUpdateFontCalls),
+      @"sampleLimit":@12,@"textCaptured":@NO
+    });
     SXRecord(@"profile-bio-rendered-metrics",SXBioRenderedMetrics());
     SXRecord(@"profile-bio-setter-counters",@{@"installed":@(SXBioSetterInstalled),@"calls":@(SXBioSetterCalls),@"textCaptured":@NO});
     NSDictionary *snapshot=SXBioSnapshot();
@@ -1262,11 +1306,13 @@ static void SXProbeInit(void) {
                 SXInstallProfileFontObservers();
                 SXInstallBioSetterObserver();
                 SXInstallFontWidthCalcObserver();
+                SXInstallProfileUpdateFontObserver();
             }];
             SXInstallTemporaryEntry();
             SXInstallProfileFontObservers();
             SXInstallBioSetterObserver();
             SXInstallFontWidthCalcObserver();
+                SXInstallProfileUpdateFontObserver();
             SXCollectAutomaticMethodMetadataIfEnabled();
         });
             [[NSNotificationCenter defaultCenter] addObserverForName:UIWindowDidBecomeKeyNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
