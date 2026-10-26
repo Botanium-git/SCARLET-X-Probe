@@ -1,4 +1,4 @@
-// SCARLET-X-Probe 0.1.43
+// SCARLET-X-Probe 0.1.44
 // No method hooks or user-content capture; Drive networking is explicitly user-triggered.
 // A minimal launch marker distinguishes dylib injection from UI-entry failure.
 #import <Foundation/Foundation.h>
