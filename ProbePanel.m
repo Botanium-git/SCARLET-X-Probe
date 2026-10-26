@@ -458,6 +458,64 @@ static BOOL SXTextModelSetterInstalled=NO;
 static volatile int SXTextModelSetterCalls=0;
 static __thread void *SXActiveBioLabel=NULL;
 static __thread NSUInteger SXActiveBioCall=0;
+// Read-only Bio-scoped initializer snapshots, matching X 12.35 arm64 ABI.
+typedef id (*SXModelInit1IMP)(id,SEL,id);
+typedef id (*SXModelInit2IMP)(id,SEL,id,id);
+static SXModelInit1IMP SXOriginalModelInit1=NULL;
+static SXModelInit2IMP SXOriginalModelInit2=NULL;
+static BOOL SXModelInit1Installed=NO, SXModelInit2Installed=NO;
+static volatile int SXModelInitSamples=0;
+static void SXRecordModelInitInput(id rich, NSString *kind) {
+    if(!SXEnabled || SXActiveBioCall==0)return;
+    int sample=__sync_add_and_fetch(&SXModelInitSamples,1);
+    if(sample>24)return;
+    NSDictionary *snapshot=@{@"status":@"not-attributed-string"};
+    if([rich isKindOfClass:NSAttributedString.class]) {
+        NSAttributedString *styled=(NSAttributedString *)rich;
+        snapshot=@{@"status":@"captured", @"textLength":@(styled.length),
+          @"styleRuns":SXTypographyMetrics(styled), @"textCaptured":@NO};
+    }
+    SXRecord(@"profile-bio-model-init",@{
+      @"callIndex":@(SXActiveBioCall), @"sampleIndex":@(sample),
+      @"initializer":kind, @"incomingAttributedString":snapshot,
+      @"textCaptured":@NO});
+}
+static id SXObservedModelInit1(id receiver, SEL selector, id rich) {
+    SXRecordModelInitInput(rich,@"initWithAttributedString:");
+    return SXOriginalModelInit1?SXOriginalModelInit1(receiver,selector,rich):receiver;
+}
+static id SXObservedModelInit2(id receiver, SEL selector, id rich, id colorView) {
+    SXRecordModelInitInput(rich,@"initWithAttributedString:colorProviderView:");
+    return SXOriginalModelInit2?SXOriginalModelInit2(receiver,selector,rich,colorView):receiver;
+}
+static void SXInstallModelInitObservers(void) {
+    Class cls=objc_getClass("TFNAttributedTextModel");
+    if(!cls)return;
+    SEL first=NSSelectorFromString(@"initWithAttributedString:");
+    SEL second=NSSelectorFromString(@"initWithAttributedString:colorProviderView:");
+    Method a=class_getInstanceMethod(cls,first);
+    Method b=class_getInstanceMethod(cls,second);
+    if(!SXModelInit1Installed && a && strcmp(method_getTypeEncoding(a),"@24@0:8@16")==0) {
+        IMP imp=method_getImplementation(a);
+        if(imp && imp!=(IMP)SXObservedModelInit1) {
+            SXOriginalModelInit1=(SXModelInit1IMP)imp;
+            class_replaceMethod(cls,first,(IMP)SXObservedModelInit1,method_getTypeEncoding(a));
+            SXModelInit1Installed=YES;
+        }
+    }
+    if(!SXModelInit2Installed && b && strcmp(method_getTypeEncoding(b),"@32@0:8@16@24")==0) {
+        IMP imp=method_getImplementation(b);
+        if(imp && imp!=(IMP)SXObservedModelInit2) {
+            SXOriginalModelInit2=(SXModelInit2IMP)imp;
+            class_replaceMethod(cls,second,(IMP)SXObservedModelInit2,method_getTypeEncoding(b));
+            SXModelInit2Installed=YES;
+        }
+    }
+    SXRecord(@"profile-bio-model-init-hook-status",@{
+      @"oneArgumentInstalled":@(SXModelInit1Installed),
+      @"twoArgumentInstalled":@(SXModelInit2Installed),
+      @"sampleLimit":@24, @"textCaptured":@NO});
+}
 static void SXObservedTextModelSetter(id receiver,SEL selector,id model) {
     BOOL relevant=((__bridge void *)receiver==SXActiveBioLabel && SXActiveBioCall>0);
     NSUInteger index=SXActiveBioCall;
@@ -1398,6 +1456,7 @@ static void SXProbeInit(void) {
                 SXInstallProfileFontObservers();
                 SXInstallBioSetterObserver();
                 SXInstallTextModelSetterObserver();
+                SXInstallModelInitObservers();
                 SXInstallFontWidthCalcObserver();
                 SXInstallProfileUpdateFontObserver();
             }];
@@ -1405,6 +1464,7 @@ static void SXProbeInit(void) {
             SXInstallProfileFontObservers();
             SXInstallBioSetterObserver();
             SXInstallTextModelSetterObserver();
+                SXInstallModelInitObservers();
             SXInstallFontWidthCalcObserver();
                 SXInstallProfileUpdateFontObserver();
             SXCollectAutomaticMethodMetadataIfEnabled();
