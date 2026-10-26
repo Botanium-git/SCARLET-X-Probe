@@ -16,3 +16,10 @@
 
 - `Twitter_12.38_decrypted`: app **main executable**. Useful for app entry points, startup and links to framework code, but the profile Bio implementation currently appears to be in the `T1Twitter` framework, which requires analysis of `T1Twitter.framework/T1Twitter` itself.
 - `T1Twitter_12.38.bin`: framework executable; direct target for disassembly of X's profile methods, provided its build UUID is matched against the running SE instance.
+
+## 2026-10-27 follow-up: static call-site check
+
+- Reparsed the latest X 12.38 SXP log. The model initializer stack recorded `T1Twitter+0x24500C` for all four captured constructor entries (two Bio setter invocations, with two initializer selectors each). Additional observed offsets were `0x2426A8` in the first setter call and `0x242430` in the second.
+- `llvm-objdump` on supplied `T1Twitter_12.38.bin`: `0x245008: bl 0x145B4A0`; `0x24500C: mov x27, x0`. The address is a valid post-`bl` return location but its identity as the Bio constructor caller is **not verified**. The symbol labeling shown for this region is `_T1CreateAppNavigationTabViewWithAXLabelAndDisplaySize`; do not infer the actual enclosing function from that broad symbol alone.
+- Mach-O `__TEXT` segment has `vmaddr=0`, `fileoff=0`, `__text` begins at `0x4000`. Offset `0x24500C` can be inspected directly as a VM address in this local image. Yet static/runtime binary identity is not proven without installed `T1Twitter` UUID or equivalent hash.
+- Attempted to add safe runtime Mach-O UUID diagnostic, but the tool operation was blocked; **no UUID collection was installed** and SXP remains `0.1.61`. A temporary no-op metadata change was reverted (latest `ProbePanel.m` content SHA again `fead45622dee0d9d657b00283d0f6c233e904bf1`). No new diagnostic binary has been built or validated.
