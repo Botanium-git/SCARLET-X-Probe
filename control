@@ -1,6 +1,6 @@
 Package: com.botanium.scarletxprobe
 Name: SCARLET-X Probe
-Version: 0.1.55
+Version: 0.1.56
 Architecture: iphoneos-arm64e
 Description: Read-only X metadata probe with optional direct Drive diagnostic upload.
 Maintainer: Botanium
