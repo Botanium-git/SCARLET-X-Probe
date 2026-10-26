@@ -568,6 +568,44 @@ static void SXScanBioViews(UIView *node, NSMutableArray *samples, NSUInteger *vi
 // Read-only font decision context; this enumerates possible providers, not a proven call graph.
 // Manual read-only snapshot of the actual UIFont class token used by the bio setter.
 // No interception, content access, global-state mutation, or calls to private setters.
+// ABI-gated, pass-through observation of the verified TAEFontSettings class method.
+// No content or account identifiers are collected; the return value is unchanged.
+typedef double (*SXFontWidthCalcIMP)(id,SEL,double,id,NSInteger,CGSize);
+static SXFontWidthCalcIMP SXOriginalFontWidthCalc=NULL;
+static BOOL SXFontWidthCalcInstalled=NO;
+static int SXFontWidthCalcCalls=0;
+static double SXObservedFontWidthCalc(id receiver,SEL selector,double baseline,id category,
+                                      NSInteger modifier,CGSize windowSize) {
+    SXFontWidthCalcIMP original=SXOriginalFontWidthCalc;
+    if(!original)return baseline; // installation always checks this first
+    double result=original(receiver,selector,baseline,category,modifier,windowSize);
+    int call=__sync_add_and_fetch(&SXFontWidthCalcCalls,1);
+    if(call<=64 && SXEnabled && SXQueue) {
+        NSString *categoryName=[category isKindOfClass:NSString.class]?(NSString *)category:@"(non-string)";
+        NSDictionary *fields=@{@"callIndex":@(call),@"baseline":@(baseline),
+          @"contentSizeCategory":categoryName,@"modifier":@(modifier),
+          @"windowSize":@[@(windowSize.width),@(windowSize.height)],
+          @"result":@(result),@"textCaptured":@NO};
+        dispatch_async(dispatch_get_main_queue(), ^{ SXRecord(@"font-width-calculation-call",fields); });
+    }
+    return result;
+}
+static void SXInstallFontWidthCalcObserver(void) {
+    if(SXFontWidthCalcInstalled)return;
+    Class cls=objc_getClass("TAEFontSettings");
+    if(!cls)return;
+    SEL sel=NSSelectorFromString(@"fontSizeWithBaselineFontSize:contentSizeCategory:contentSizeModifier:windowSize:");
+    Method method=class_getClassMethod(cls,sel);
+    const char *abi=method?method_getTypeEncoding(method):NULL;
+    if(!abi || strcmp(abi,"d56@0:8d16@24q32{CGSize=dd}40")!=0)return;
+    IMP imp=method_getImplementation(method);
+    if(!imp || imp==(IMP)SXObservedFontWidthCalc)return;
+    SXOriginalFontWidthCalc=(SXFontWidthCalcIMP)imp;
+    class_replaceMethod(object_getClass(cls),sel,(IMP)SXObservedFontWidthCalc,abi);
+    SXFontWidthCalcInstalled=YES;
+    SXRecord(@"font-width-calculation-hook-installed",@{@"abiVerified":@YES,
+      @"originalImage":SXIMPImageName(imp),@"limit":@64,@"textCaptured":@NO});
+}
 // Targeted, read-only ABI discovery. No class-list enumeration or method replacement.
 static void SXRecordFontWidthABIMetadata(void) {
     NSArray<NSString *> *names=@[@"tfn_defaultFontSize",
@@ -1154,10 +1192,12 @@ static void SXProbeInit(void) {
                 SXInstallTemporaryEntry();
                 SXInstallProfileFontObservers();
                 SXInstallBioSetterObserver();
+                SXInstallFontWidthCalcObserver();
             }];
             SXInstallTemporaryEntry();
             SXInstallProfileFontObservers();
             SXInstallBioSetterObserver();
+            SXInstallFontWidthCalcObserver();
             SXCollectAutomaticMethodMetadataIfEnabled();
         });
             [[NSNotificationCenter defaultCenter] addObserverForName:UIWindowDidBecomeKeyNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
