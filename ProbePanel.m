@@ -891,6 +891,7 @@ static void SXRecordBioFontTokenRuntime(void) {
     Method tokenMethod=fontClass?class_getClassMethod(fontClass,tokenSel):NULL;
     NSMutableDictionary *result=[@{@"selector":@"xds_body",
       @"methodPresent":@(tokenMethod!=NULL),@"valuesRead":@NO,
+      @"contentSizeCategory":[UIApplication sharedApplication].preferredContentSizeCategory?:@"unknown",
       @"textCaptured":@NO} mutableCopy];
     if(tokenMethod) {
         const char *types=method_getTypeEncoding(tokenMethod);
