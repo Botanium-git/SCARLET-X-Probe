@@ -23,3 +23,12 @@
 - `llvm-objdump` on supplied `T1Twitter_12.38.bin`: `0x245008: bl 0x145B4A0`; `0x24500C: mov x27, x0`. The address is a valid post-`bl` return location but its identity as the Bio constructor caller is **not verified**. The symbol labeling shown for this region is `_T1CreateAppNavigationTabViewWithAXLabelAndDisplaySize`; do not infer the actual enclosing function from that broad symbol alone.
 - Mach-O `__TEXT` segment has `vmaddr=0`, `fileoff=0`, `__text` begins at `0x4000`. Offset `0x24500C` can be inspected directly as a VM address in this local image. Yet static/runtime binary identity is not proven without installed `T1Twitter` UUID or equivalent hash.
 - Attempted to add safe runtime Mach-O UUID diagnostic, but the tool operation was blocked; **no UUID collection was installed** and SXP remains `0.1.61`. A temporary no-op metadata change was reverted (latest `ProbePanel.m` content SHA again `fead45622dee0d9d657b00283d0f6c233e904bf1`). No new diagnostic binary has been built or validated.
+
+## 2026-10-27 21:44 JST: SXP 0.1.62 runtime UUID confirmed
+
+- Latest Drive diagnostic: `SXProbe_2026-10-27_214410.json` (file ID `1bXnkfTlx4gV_UGliz9kvMTUfpMu0cQGT`), X `12.38` build `24`.
+- New `profile-bio-runtime-uuid` event succeeded: running `T1Twitter` UUID **`1BC82B24-A66B-3F8C-9D8D-36D2B90D1329`**.
+- This matches the supplied IPA's extracted `T1Twitter` Mach-O UUID exactly. The former *build-identity* uncertainty is resolved. UUID matching does not guarantee byte-for-byte equality, but establishes matching Mach-O build identity.
+- Four Bio model initializer log events still show `.SFUI-Regular` 14pt, line height 16.70703125pt, and all share runtime `T1Twitter+0x24500C` in the stack trace.
+- With the exact matching Mach-O UUID, disassembly at `0x245008` is `bl 0x145B4A0`; `0x24500C` is `mov x27, x0`. This is consistent with a return address immediately after a call, but the target's actual semantic meaning is **not yet established**. Earlier interpretation that the call site was unrelated based only on nearest symbol label may be unreliable; follow its target and relevant ObjC method address ranges before concluding.
+- No new probe update in response to this log; SXP remains 0.1.62.
