@@ -32,3 +32,11 @@
 - Four Bio model initializer log events still show `.SFUI-Regular` 14pt, line height 16.70703125pt, and all share runtime `T1Twitter+0x24500C` in the stack trace.
 - With the exact matching Mach-O UUID, disassembly at `0x245008` is `bl 0x145B4A0`; `0x24500C` is `mov x27, x0`. This is consistent with a return address immediately after a call, but the target's actual semantic meaning is **not yet established**. Earlier interpretation that the call site was unrelated based only on nearest symbol label may be unreliable; follow its target and relevant ObjC method address ranges before concluding.
 - No new probe update in response to this log; SXP remains 0.1.62.
+
+## 2026-10-27: Bio font constructor path verified
+
+- X 12.38 matching runtime/static T1Twitter UUID already confirmed.
+- T1Twitter address 0x245008 branches to Objective-C stub for `initWithAttributedString:`; the 0x24500C stack-frame offset is its return address.
+- Earlier 0x244F58 calls `initWithString:font:alignment:lineBreakMode:paragraphSpacing:lineHeight:` and passes its return object to the model initializer.
+- Before constructing that text, 0x244EF0 and 0x244F18 dispatch `UIFont xds_body` through a shared stub. At 0x244F4C, x24 holds the font supplied to the attributed string constructor. Runtime observed `xds_body` returns 14pt .SFUI-Regular with line height 16.70703125pt.
+- Conclusion for this observed Bio path: `UIFont xds_body` supplies the font to attributed string construction. The *implementation of xds_body itself* and alternate Dynamic Type conditions remain to investigate. SXP stays 0.1.62.
