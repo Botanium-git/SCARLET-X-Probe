@@ -1127,10 +1127,67 @@ static NSDictionary *SXBioRenderedMetrics(void) {
                     if(isfinite(value))layout[[name substringFromIndex:1]]=@(value);
                 }
             }
+            // Bio display state, sampled only during the explicit manual measurement.
+            NSMutableDictionary *expansion=[NSMutableDictionary dictionary];
+            for(NSString *name in @[@"_bioExpanded",@"_expandedBioEnabled"]) {
+                Ivar flag=class_getInstanceVariable(profileClass,name.UTF8String);
+                if(flag && strcmp(ivar_getTypeEncoding(flag),"B")==0) {
+                    BOOL value=NO;
+                    memcpy(&value,(const char *)(__bridge const void *)v+ivar_getOffset(flag),sizeof(value));
+                    expansion[[name substringFromIndex:1]]=@(value);
+                }
+            }
+            Ivar expandButton=class_getInstanceVariable(profileClass,"_expandedBioButton");
+            if(expandButton && ivar_getTypeEncoding(expandButton)[0]=='@') {
+                id button=object_getIvar(v,expandButton);
+                if([button isKindOfClass:UIView.class]) {
+                    UIView *bv=(UIView *)button;
+                    expansion[@"buttonHidden"]=@(bv.hidden);
+                    expansion[@"buttonInWindow"]=@(bv.window!=nil);
+                }
+            }
+            Ivar maximum=class_getInstanceVariable(modelClass,"_maxLines");
+            if(maximum && strcmp(ivar_getTypeEncoding(maximum),"Q")==0) {
+                NSUInteger value=0;
+                memcpy(&value,(const char *)(__bridge const void *)model+ivar_getOffset(maximum),sizeof(value));
+                expansion[@"modelMaxLines"]=@(value);
+            }
+            Ivar truncated=class_getInstanceVariable(modelClass,"_truncated");
+            if(truncated && strcmp(ivar_getTypeEncoding(truncated),"B")==0) {
+                BOOL value=NO;
+                memcpy(&value,(const char *)(__bridge const void *)model+ivar_getOffset(truncated),sizeof(value));
+                expansion[@"modelTruncated"]=@(value);
+            }
+            // Attribute keys and lengths only; never serialize link targets or Bio contents.
+            __block NSUInteger linkRuns=0, linkCharacters=0, emojiCandidateClusters=0;
+            NSMutableSet<NSString *> *attributeKeys=[NSMutableSet set];
+            if(a.length) {
+                [a enumerateAttributesInRange:NSMakeRange(0,a.length) options:0 usingBlock:^(NSDictionary *attrs,NSRange range,BOOL *stop) {
+                    for(id key in attrs)if([key isKindOfClass:NSString.class] && attributeKeys.count<32)
+                        [attributeKeys addObject:(NSString *)key];
+                    if(attrs[NSLinkAttributeName]){linkRuns++;linkCharacters+=range.length;}
+                }];
+                NSString *plain=a.string;
+                [plain enumerateSubstringsInRange:NSMakeRange(0,plain.length)
+                    options:NSStringEnumerationByComposedCharacterSequences
+                    usingBlock:^(NSString *cluster,NSRange substringRange,NSRange enclosingRange,BOOL *stop) {
+                        BOOL candidate=NO;
+                        for(NSUInteger at=0;at<cluster.length;at++) {
+                            unichar ch=[cluster characterAtIndex:at];
+                            if((ch>=0x2600&&ch<=0x27BF) || ch==0xFE0F || ch==0x200D ||
+                               (ch>=0xD83C&&ch<=0xD83E)) {candidate=YES;break;}
+                        }
+                        if(candidate)emojiCandidateClusters++;
+                    }];
+            }
+            NSDictionary *richDiagnostics=@{@"attributeKeys":[[attributeKeys allObjects] sortedArrayUsingSelector:@selector(compare:)],
+                @"nsLinkAttributeRuns":@(linkRuns),@"nsLinkAttributeCharacters":@(linkCharacters),
+                @"emojiCandidateClusters":@(emojiCandidateClusters),
+                @"emojiCountIsApproximate":@YES,@"textCaptured":@NO,@"linkTargetsCaptured":@NO};
             CGRect bioFrame=((UIView *)label).frame;
             return @{@"status":@"captured",@"textLength":@(a.length),
                      @"bioFrame":@[@(bioFrame.origin.x),@(bioFrame.origin.y),@(bioFrame.size.width),@(bioFrame.size.height)],
-                     @"styleRuns":styles,@"layoutMetrics":layout,@"textCaptured":@NO};
+                     @"styleRuns":styles,@"layoutMetrics":layout,@"expansion":expansion,@"richTextDiagnostics":richDiagnostics,@"textCaptured":@NO};
         }
         for(UIView *child in v.subviews)if(stack.count<2000)[stack addObject:child];
     }
