@@ -1158,14 +1158,53 @@ static NSDictionary *SXBioRenderedMetrics(void) {
                 memcpy(&value,(const char *)(__bridge const void *)model+ivar_getOffset(truncated),sizeof(value));
                 expansion[@"modelTruncated"]=@(value);
             }
-            // Attribute keys and lengths only; never serialize link targets or Bio contents.
-            __block NSUInteger linkRuns=0, linkCharacters=0, emojiCandidateClusters=0;
+            // Read-only Bio link style measurement. Never serialize text, link targets,
+            // user IDs, attribute values or other content-bearing objects.
+            __block NSUInteger linkRuns=0, linkCharacters=0, tfnLinkRuns=0,
+                tfnLinkCharacters=0, emojiCandidateClusters=0;
             NSMutableSet<NSString *> *attributeKeys=[NSMutableSet set];
+            NSMutableArray *tfnLinkStyles=[NSMutableArray array];
+            NSMutableArray *ordinaryStyles=[NSMutableArray array];
+            NSString *const tfnLinkKey=@"TFNLinkTextAttributeName";
             if(a.length) {
                 [a enumerateAttributesInRange:NSMakeRange(0,a.length) options:0 usingBlock:^(NSDictionary *attrs,NSRange range,BOOL *stop) {
                     for(id key in attrs)if([key isKindOfClass:NSString.class] && attributeKeys.count<32)
                         [attributeKeys addObject:(NSString *)key];
                     if(attrs[NSLinkAttributeName]){linkRuns++;linkCharacters+=range.length;}
+                    BOOL isTFNLink=attrs[tfnLinkKey]!=nil;
+                    if(isTFNLink){tfnLinkRuns++;tfnLinkCharacters+=range.length;}
+                    NSMutableArray *destination=isTFNLink?tfnLinkStyles:ordinaryStyles;
+                    if(destination.count<24) {
+                        NSMutableDictionary *style=[@{@"rangeLocation":@(range.location),
+                            @"rangeLength":@(range.length)} mutableCopy];
+                        if(isTFNLink) {
+                            // Only the ObjC class is safe to report, never the attribute value.
+                            id marker=attrs[tfnLinkKey];
+                            style[@"markerValueClass"]=NSStringFromClass([marker class])?:@"unknown";
+                        }
+                        id font=attrs[NSFontAttributeName];
+                        if([font isKindOfClass:UIFont.class]) {
+                            UIFont *f=(UIFont *)font;
+                            style[@"fontName"]=f.fontName?:@"";
+                            style[@"pointSize"]=@(f.pointSize);
+                            style[@"lineHeight"]=@(f.lineHeight);
+                        }
+                        id color=attrs[NSForegroundColorAttributeName];
+                        if([color isKindOfClass:UIColor.class]) {
+                            CGFloat r=0,g=0,b=0,alpha=0,white=0;
+                            if([(UIColor *)color getRed:&r green:&g blue:&b alpha:&alpha]) {
+                                style[@"foregroundRGBA"]=@[@(r),@(g),@(b),@(alpha)];
+                            } else if([(UIColor *)color getWhite:&white alpha:&alpha]) {
+                                style[@"foregroundWhiteAlpha"]=@[@(white),@(alpha)];
+                            } else {
+                                style[@"foregroundColorUnresolved"]=@YES;
+                            }
+                        }
+                        id underline=attrs[NSUnderlineStyleAttributeName];
+                        if([underline isKindOfClass:NSNumber.class])
+                            style[@"underlineStyle"]=underline;
+                        [destination addObject:style];
+                    }
                 }];
                 NSString *plain=a.string;
                 [plain enumerateSubstringsInRange:NSMakeRange(0,plain.length)
@@ -1182,6 +1221,9 @@ static NSDictionary *SXBioRenderedMetrics(void) {
             }
             NSDictionary *richDiagnostics=@{@"attributeKeys":[[attributeKeys allObjects] sortedArrayUsingSelector:@selector(compare:)],
                 @"nsLinkAttributeRuns":@(linkRuns),@"nsLinkAttributeCharacters":@(linkCharacters),
+                @"tfnLinkAttributeRuns":@(tfnLinkRuns),@"tfnLinkAttributeCharacters":@(tfnLinkCharacters),
+                @"tfnLinkStyles":tfnLinkStyles,@"ordinaryStyles":ordinaryStyles,
+                @"styleRunLimit":@24,@"styleRangesAreUTF16":@YES,
                 @"emojiCandidateClusters":@(emojiCandidateClusters),
                 @"emojiCountIsApproximate":@YES,@"textCaptured":@NO,@"linkTargetsCaptured":@NO};
             CGRect bioFrame=((UIView *)label).frame;
