@@ -63,3 +63,12 @@
 - Emoji candidate clusters: 0 in truncated attributed model, 3 expanded. These are approximate candidates, not a Unicode emoji rendering proof.
 - The link's UTF-16 styling range and color are now **runtime-confirmed**, but interaction/tap semantics, URL destination and generalized rules across profiles remain unverified. Avoid treating the collapsed trailing blue token as equivalent to the full expanded link.
 - SXP 0.1.65 instrumentation was effective on-device; no SX UI changes have been made from this log. The extra diagnostics fields capture attribute-run metrics and the link marker's *class*, not marker content or target. Earlier general SXP view snapshots may separately include accessibility text; this entry refers only to the v0.1.65 added fields.
+
+
+## 2026-11-04: SX native profile Bio audit and targeted font update
+
+- Audited Scarlet X `develop` at `d8597c600dfd41b95c63bee0af53461a0b6af31d`, including `UI/NativeProfileViewController.m` and `UI/NativeProfilePolish230.m`.
+- Confirmed SX Bio currently uses a `UILabel` with `numberOfLines=0` and plain `text=bio` in the base controller, i.e. no four-line truncation/expand UI or Bio-specific URL range treatment in those audited methods. Official X 12.38 observed default `modelMaxLines=4`, expanded `modelMaxLines=0`, and `TFNLinkTextAttributeName` for an expanded URL segment. This is a code/measurement difference, **not** verification of an SX on-device defect.
+- SX profile polish code set Bio font XS 12, S 13, and all other categories 14pt; SXP measured X 12.38 Bio XS 12, M/L 14, XL 15, XXL 17 and XXXL 20pt.
+- Applied *only the confirmed XL/XXL/XXXL point-size correction* in SX `UI/NativeProfilePolish230.m` (commit `fe8c10e1a825e1fc18fd8e5edd0f4cd1400b5a09`); bumped `Resources/Info.plist` to SX v1.4.170 build 352 (commit `7f5a34be6ef84c86389ba905962133829ec7aacf`). S=13 and bold-text handling were left unchanged as not newly verified in X 12.38; accessibility categories above XXXL remain unmeasured.
+- Do not silently add link tapping based solely on attributed color/range, or implement expansion without accounting for profile rebuild lifecycle and the layout beneath Bio. Separate these changes into independently testable subsequent SX versions. GitHub Actions success, if observed, proves package build only; actual iPhone behavior requires user validation.
