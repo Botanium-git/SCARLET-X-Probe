@@ -72,3 +72,13 @@
 - SX profile polish code set Bio font XS 12, S 13, and all other categories 14pt; SXP measured X 12.38 Bio XS 12, M/L 14, XL 15, XXL 17 and XXXL 20pt.
 - Applied *only the confirmed XL/XXL/XXXL point-size correction* in SX `UI/NativeProfilePolish230.m` (commit `fe8c10e1a825e1fc18fd8e5edd0f4cd1400b5a09`); bumped `Resources/Info.plist` to SX v1.4.170 build 352 (commit `7f5a34be6ef84c86389ba905962133829ec7aacf`). S=13 and bold-text handling were left unchanged as not newly verified in X 12.38; accessibility categories above XXXL remain unmeasured.
 - Do not silently add link tapping based solely on attributed color/range, or implement expansion without accounting for profile rebuild lifecycle and the layout beneath Bio. Separate these changes into independently testable subsequent SX versions. GitHub Actions success, if observed, proves package build only; actual iPhone behavior requires user validation.
+
+
+## 2026-11-04: SX exact formula requirement (not a point-size table)
+
+- User explicitly clarified that the SX Bio font must reproduce the **original X font-sizing computation**, not merely hardcode the observed XS/M/L/XL/XXL/XXXL point sizes. The earlier SX v1.4.170 change is a measured-category approximation and does **not** meet this requirement.
+- Verified current SX `UI/NativeProfilePolish230.m`: `UIApplication.sharedApplication.preferredContentSizeCategory` is inspected in an `if/else` table, choosing explicit point sizes; `UIAccessibilityIsBoldTextEnabled()` separately changes weight. This is not a reimplementation of X's `UIFont xds_body` internal algorithm.
+- Original X 12.38 SXP runtime established that `UIFont xds_body` supplies Bio's font, but does **not** expose the function body or its inputs, thresholds, scaling method, accessibility categories or device size behavior.
+- Extracted the supplied IPA member `XServiceLibraries.framework/XServiceLibraries` for static examination; relevant ObjC selector strings `xds_body`, `tfn_dynamicFontSizeOffsetBy:`, and `fontSizeWithBaselineFontSize:contentSizeCategory:contentSizeModifier:windowSize:` exist. **String presence alone is not a proven call graph or formula**.
+- Pending: identify the real `xds_body` implementation address, disassemble its complete call path through relevant font helpers, then derive and validate the precise conditions/constants using observed device logs before replacing SX's point-size table. No SX source modification was made during this analysis step.
+- The screenshot comparison also clarified that the different placement of SX profile action buttons is **intentional**, so do not alter it as part of Bio parity work. The screenshots were for visible Bio differences, not a request to diagnose loading state.
