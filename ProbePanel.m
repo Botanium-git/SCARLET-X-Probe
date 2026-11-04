@@ -896,7 +896,16 @@ static void SXRecordBioFontTokenRuntime(void) {
     if(tokenMethod) {
         const char *types=method_getTypeEncoding(tokenMethod);
         result[@"typeEncoding"]=types?[NSString stringWithUTF8String:types]:@"";
-        result[@"implementationImage"]=SXIMPImageName(method_getImplementation(tokenMethod));
+        IMP implementation=method_getImplementation(tokenMethod);
+        result[@"implementationImage"]=SXIMPImageName(implementation);
+        // Read-only runtime IMP image-relative address: no pointer or full path logged.
+        Dl_info location={0};
+        if(implementation && dladdr((const void *)implementation,&location) && location.dli_fbase) {
+            uintptr_t offset=(uintptr_t)implementation-(uintptr_t)location.dli_fbase;
+            result[@"implementationImageRelativeOffset"]=@(offset);
+            result[@"implementationImageRelativeHex"]=[NSString stringWithFormat:@"0x%llx",(unsigned long long)offset];
+            result[@"implementationAddressResolved"]=@YES;
+        } else result[@"implementationAddressResolved"]=@NO;
         // Only invoke the known zero-argument object-returning getter on UIFont.
         NSMethodSignature *signature=types?[NSMethodSignature signatureWithObjCTypes:types]:nil;
         if(signature && signature.numberOfArguments==2 &&
