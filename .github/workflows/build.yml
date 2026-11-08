@@ -1,18 +1,18 @@
-name: ScarletX Probe
-run-name: ScarletX Probe Build
+name: ScarletX Probe Rootless
+run-name: ScarletX Probe Rootless Build
 
 on:
   push:
-    branches: [develop]
+    branches: [rootless]
   pull_request:
-    branches: [develop]
+    branches: [rootless]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: probe-build-${{ github.ref }}
+  group: probe-rootless-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,21 +22,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache RootHide Theos and SDK
+      - name: Cache Theos and SDK
         id: theos-cache
         uses: actions/cache@v4
         with:
           path: theos
-          key: roothide-theos-ios16.5-v2
+          key: rootless-theos-ios16.5-v1
 
-      - name: Setup lightweight RootHide Theos
+      - name: Setup lightweight Theos
         shell: bash
         run: |
           set -euo pipefail
           export THEOS="$GITHUB_WORKSPACE/theos"
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
           if [ "${{ steps.theos-cache.outputs.cache-hit }}" != "true" ]; then
-            git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/roothide/theos.git "$THEOS"
+            git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/theos/theos.git "$THEOS"
             mkdir -p "$THEOS/sdks"
             git clone --depth=1 --filter=blob:none --sparse https://github.com/theos/sdks.git "$RUNNER_TEMP/theos-sdks"
             git -C "$RUNNER_TEMP/theos-sdks" sparse-checkout set iPhoneOS16.5.sdk
@@ -60,9 +60,9 @@ jobs:
           test "$package_version" = "$display_version"
           test "$package_version" = "$marker_version"
 
-      - name: Build RootHide package
+      - name: Build rootless package
         env:
-          THEOS_PACKAGE_SCHEME: roothide
+          THEOS_PACKAGE_SCHEME: rootless
         run: |
           make -j"$(sysctl -n hw.logicalcpu)" package FINALPACKAGE=1
           find packages -type f -name '*.deb' -print
@@ -94,7 +94,7 @@ jobs:
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SCARLET-X-Probe-roothide
+          name: SCARLET-X-Probe-rootless
           path: packages/*.deb
           if-no-files-found: error
           retention-days: 14
