@@ -1,6 +1,6 @@
 ARCHS = arm64
 TARGET = iphone:clang:latest:15.0
-THEOS_PACKAGE_SCHEME = roothide
+THEOS_PACKAGE_SCHEME = rootless
 INSTALL_TARGET_PROCESSES =
 
 include $(THEOS)/makefiles/common.mk
