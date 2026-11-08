@@ -3,9 +3,9 @@ run-name: ScarletX Probe Build
 
 on:
   push:
-    branches: [develop]
+    branches: [roothide]
   pull_request:
-    branches: [develop]
+    branches: [roothide]
   workflow_dispatch:
 
 permissions:
