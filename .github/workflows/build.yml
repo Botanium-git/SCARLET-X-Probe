@@ -81,7 +81,7 @@ jobs:
           grep -q 'Library/MobileSubstrate/DynamicLibraries/ScarletXProbe.dylib' "$RUNNER_TEMP/probe-package-files.txt"
           grep -q 'Library/MobileSubstrate/DynamicLibraries/ScarletXProbe.plist' "$RUNNER_TEMP/probe-package-files.txt"
           echo "=== staged dylib architecture and linked libraries ==="
-          dylib="$(find .theos/_/Library/MobileSubstrate/DynamicLibraries -name 'ScarletXProbe.dylib' -print -quit)"
+          dylib="$(find .theos/_/var/jb/Library/MobileSubstrate/DynamicLibraries -name 'ScarletXProbe.dylib' -print -quit)"
           test -f "$dylib"
           file "$dylib"
           xcrun lipo -info "$dylib"
