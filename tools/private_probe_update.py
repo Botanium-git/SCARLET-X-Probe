@@ -147,17 +147,17 @@ def main():
     if not token:
         sys.exit("No token supplied. Nothing changed.")
     try:
-        q = urllib.parse.urlencode({"branch": "develop", "event": "push",
+        q = urllib.parse.urlencode({"branch": "roothide", "event": "push",
                                    "status": "success", "per_page": 20})
         runs = api_json(API + "/repos/" + REPO + "/actions/workflows/" + WORKFLOW + "/runs?" + q, token)
         candidates = [x for x in runs.get("workflow_runs", [])
-                      if x.get("head_branch") == "develop"
+                      if x.get("head_branch") == "roothide"
                       and x.get("event") == "push"
                       and x.get("status") == "completed"
                       and x.get("conclusion") == "success"
                       and x.get("path", "").endswith(WORKFLOW)]
         if not candidates:
-            raise ValueError("No successful develop push build found")
+            raise ValueError("No successful roothide push build found")
         # Take latest successful run by workflow run id, not a PR build.
         run = max(candidates, key=lambda r: r["id"])
         result = api_json(API + "/repos/" + REPO + "/actions/runs/" + str(run["id"]) + "/artifacts?per_page=100", token)
