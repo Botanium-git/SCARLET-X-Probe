@@ -97,7 +97,7 @@ static NSData *SXExtractSingleDeb(NSData *zip) {
 
 // Installed version is generated at package build time for this known Probe revision.
 // Never use the official X application's CFBundle version as the Probe version.
-NSString *SXProbeOwnVersion(void) { return @"0.1.66"; }
+NSString *SXProbeOwnVersion(void) { return @"0.1.67"; }
 void SXProbeCheckUpdateNotice(void(^done)(NSString *notice)) {
     if(!done)return;
     NSString *token=SXUpdateToken();
@@ -280,7 +280,7 @@ extern void SXDriveHandleRow(NSInteger row, UIViewController *host);
             NSDictionary *artifactList=!failure?[self updateJSON:[NSString stringWithFormat:@"%@/actions/runs/%@/artifacts?per_page=100",base,best[@"id"]] token:token error:&failure]:nil;
             NSDictionary *artifact=nil; NSInteger count=0;
             for(NSDictionary *a in artifactList[@"artifacts"]) {
-                if([a isKindOfClass:NSDictionary.class] && [a[@"name"] isEqual:@"SCARLET-X-Probe-roothide"] && ![a[@"expired"] boolValue]) {artifact=a;count++;}
+                if([a isKindOfClass:NSDictionary.class] && [a[@"name"] isEqual:@"SCARLET-X-Probe-rootless"] && ![a[@"expired"] boolValue]) {artifact=a;count++;}
             }
             if(!failure && count!=1)failure=[NSError errorWithDomain:@"SXUpdate" code:2 userInfo:@{NSLocalizedDescriptionKey:@"有効な成果物が1つに決まらない"}];
             NSHTTPURLResponse *redirect=nil;
